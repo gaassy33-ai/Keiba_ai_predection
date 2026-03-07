@@ -19,7 +19,7 @@ from loguru import logger
 
 from config.settings import settings
 from src.scraper.netkeiba_scraper import NetkeibaScraper
-from src.scraper.race_schedule import RaceScheduleFetcher
+from src.scraper.race_schedule import RaceScheduleFetcher, select_main_race
 from src.scraper.weather import WeatherFetcher
 from src.features.engineer import FeatureEngineer
 from src.model.predictor import RacePredictor
@@ -242,7 +242,7 @@ def run_morning_pages() -> None:
         logger.info("本日の対象レースなし。ページ生成をスキップします。")
         return
 
-    main_race = max(races, key=lambda r: int(r.get("race_number", 0)))
+    main_race = select_main_race(races)
     race_id   = main_race["race_id"]
     race_name = main_race.get("race_name", race_id)
     logger.info(f"Morning pages: {race_name} ({race_id})")

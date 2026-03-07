@@ -112,7 +112,7 @@ def _handle_main_race(reply_token: str) -> None:
     当日のメインレース（最大R番号）を特定し、AI予想 Flex Message を返信する。
     モデル未学習・スクレイピングエラー時はテキストでフォールバック。
     """
-    from src.scraper.race_schedule import RaceScheduleFetcher
+    from src.scraper.race_schedule import RaceScheduleFetcher, select_main_race
 
     try:
         # ── レーススケジュール取得 ─────────────────────────────────────
@@ -127,7 +127,7 @@ def _handle_main_race(reply_token: str) -> None:
             ))])
             return
 
-        main_race  = max(races, key=lambda r: int(r.get("race_number", 0)))
+        main_race  = select_main_race(races)
         race_id    = main_race.get("race_id", "")
         race_name  = main_race.get("race_name", "メインレース")
         start_time = main_race.get("start_time")

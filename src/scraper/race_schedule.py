@@ -13,6 +13,41 @@ from tenacity import retry, stop_after_attempt, wait_fixed
 from config.settings import settings
 
 
+_GRADE_SCORE: dict[str, int] = {
+    "GⅠ": 60, "G1": 60,
+    "GⅡ": 50, "G2": 50,
+    "GⅢ": 40, "G3": 40,
+    "L":  30,
+    "OP": 20,
+}
+
+
+def _grade_score(race_name: str) -> int:
+    for key, score in _GRADE_SCORE.items():
+        if key in race_name:
+            return score
+    return 0
+
+
+def select_main_race(races: list[dict]) -> dict:
+    """
+    レース一覧からメインレースを選択する。
+
+    優先順位:
+    1. グレード（GⅠ > GⅡ > GⅢ > L > OP > 一般）
+    2. 同グレード内では 11R を優先（メインレースは通常 11R、12R は最終レース）
+    3. それ以外はレース番号の降順
+    """
+    def _score(race: dict) -> tuple[int, int]:
+        grade = _grade_score(race.get("race_name", ""))
+        rnum  = race.get("race_number", 0)
+        # R11 を最優先、R12 は最終レースなので後回し、それ以外は番号順
+        num_sc = 11 if rnum == 11 else (0 if rnum >= 12 else rnum)
+        return (grade, num_sc)
+
+    return max(races, key=_score)
+
+
 class RaceScheduleFetcher:
     SCHEDULE_URL = "https://race.netkeiba.com/top/race_list.html"
 
