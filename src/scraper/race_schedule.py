@@ -1,14 +1,23 @@
 """
 当日・翌日のレーススケジュール（発走時刻・race_id）を取得する。
+
+netkeiba のレースリストページは JavaScript レンダリングのため Selenium を使用する。
 """
 
 import re
+import time
 from datetime import date, datetime
+from typing import Optional
 
-import requests
 from bs4 import BeautifulSoup
 from loguru import logger
-from tenacity import retry, stop_after_attempt, wait_fixed
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import WebDriverWait
+from webdriver_manager.chrome import ChromeDriverManager
 
 from config.settings import settings
 
@@ -52,21 +61,38 @@ class RaceScheduleFetcher:
     SCHEDULE_URL = "https://race.netkeiba.com/top/race_list.html"
 
     def __init__(self) -> None:
-        self._session = requests.Session()
-        self._session.headers.update({"User-Agent": settings.user_agent})
+        self._driver: Optional[webdriver.Chrome] = None
 
-    @retry(stop=stop_after_attempt(3), wait=wait_fixed(settings.scrape_interval_seconds))
-    def _get(self, url: str, params: dict | None = None) -> BeautifulSoup:
-        import time
-        time.sleep(settings.scrape_interval_seconds)
-        resp = self._session.get(url, params=params, timeout=30)
-        resp.raise_for_status()
-        resp.encoding = resp.apparent_encoding
-        return BeautifulSoup(resp.text, "lxml")
+    def _get_driver(self) -> webdriver.Chrome:
+        if self._driver is None:
+            opts = Options()
+            if settings.selenium_headless:
+                opts.add_argument("--headless=new")
+            opts.add_argument("--no-sandbox")
+            opts.add_argument("--disable-dev-shm-usage")
+            opts.add_argument(f"--user-agent={settings.user_agent}")
+            service = (
+                Service(settings.chromedriver_path)
+                if settings.chromedriver_path
+                else Service(ChromeDriverManager().install())
+            )
+            self._driver = webdriver.Chrome(service=service, options=opts)
+        return self._driver
+
+    def close(self) -> None:
+        if self._driver:
+            self._driver.quit()
+            self._driver = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.close()
 
     def fetch_race_list(self, target_date: date | None = None) -> list[dict]:
         """
-        指定日のレース一覧を取得する。
+        指定日のレース一覧を Selenium で取得する。
 
         Returns
         -------
@@ -77,25 +103,57 @@ class RaceScheduleFetcher:
         if target_date is None:
             target_date = date.today()
 
-        params = {"kaisai_date": target_date.strftime("%Y%m%d")}
-        logger.info(f"Fetching race schedule for {target_date}")
-        soup = self._get(self.SCHEDULE_URL, params=params)
+        url = f"{self.SCHEDULE_URL}?kaisai_date={target_date.strftime('%Y%m%d')}"
+        logger.info(f"Fetching race schedule (Selenium): {url}")
 
-        races = []
-        for race_list_div in soup.select("div.RaceList_DataItem"):
-            link = race_list_div.select_one("a[href*='race_id']")
-            if link is None:
+        driver = self._get_driver()
+        driver.get(url)
+
+        # JS レンダリング完了を待つ
+        try:
+            WebDriverWait(driver, 15).until(
+                EC.presence_of_element_located(
+                    (By.CSS_SELECTOR, "a[href*='race_id'], div.RaceList_DataItem, li.RaceList_DataItem")
+                )
+            )
+        except Exception:
+            logger.warning("レースリスト要素が見つからず — ページソースをそのまま解析します")
+        time.sleep(1)
+
+        soup = BeautifulSoup(driver.page_source, "lxml")
+
+        # race_id を持つ全リンクから一意な race_id を抽出
+        races: list[dict] = []
+        seen: set[str] = set()
+
+        for a in soup.select("a[href*='race_id']"):
+            href = a.get("href", "")
+            m = re.search(r"race_id=(\d{12})", href)
+            if not m:
                 continue
-
-            href = link.get("href", "")
-            race_id_match = re.search(r"race_id=(\d+)", href)
-            if not race_id_match:
+            race_id = m.group(1)
+            if race_id in seen:
                 continue
-            race_id = race_id_match.group(1)
+            seen.add(race_id)
 
-            # 発走時刻（"15:30" 形式）
-            time_tag = race_list_div.select_one(".RaceList_Itemtime")
+            # race_id の末尾2桁 = レース番号
+            race_num = int(race_id[10:12])
+
+            # 親コンテナからレース名・発走時刻・競馬場名を取得
+            container = (
+                a.find_parent("li")
+                or a.find_parent("div", class_=re.compile(r"RaceList"))
+                or a.find_parent("div")
+                or a
+            )
+
+            # 発走時刻
+            time_tag = container.select_one(
+                ".RaceList_Itemtime, .ItemTime, [class*='time'], [class*='Time']"
+            )
             start_time_str = time_tag.get_text(strip=True) if time_tag else "00:00"
+            if not re.match(r"\d{1,2}:\d{2}", start_time_str):
+                start_time_str = "00:00"
             try:
                 start_dt = datetime.strptime(
                     f"{target_date.isoformat()} {start_time_str}", "%Y-%m-%d %H:%M"
@@ -103,20 +161,26 @@ class RaceScheduleFetcher:
             except ValueError:
                 start_dt = datetime(target_date.year, target_date.month, target_date.day)
 
-            # 競馬場名・レース番号
-            jyo_tag = race_list_div.select_one(".RaceList_ItemJyo")
-            race_num_tag = race_list_div.select_one(".RaceList_ItemNum")
-            race_name_tag = race_list_div.select_one(".RaceList_ItemTitle")
+            # レース名
+            name_tag = container.select_one(
+                ".RaceList_ItemTitle, .ItemTitle, [class*='Title'], [class*='Name']"
+            )
+            race_name = name_tag.get_text(strip=True) if name_tag else ""
+
+            # 競馬場名（race_id[4:6] から補完）
+            jyo_tag = container.select_one(".RaceList_ItemJyo, [class*='Jyo'], [class*='Place']")
+            jyo_name = jyo_tag.get_text(strip=True) if jyo_tag else ""
 
             races.append({
-                "race_id": race_id,
-                "jyo_name": jyo_tag.get_text(strip=True) if jyo_tag else "",
-                "race_number": int(race_num_tag.get_text(strip=True).replace("R", "") or 0)
-                if race_num_tag else 0,
-                "race_name": race_name_tag.get_text(strip=True) if race_name_tag else "",
-                "start_time": start_dt,
+                "race_id":     race_id,
+                "jyo_name":    jyo_name,
+                "race_number": race_num,
+                "race_name":   race_name,
+                "start_time":  start_dt,
             })
 
+        # race_number 昇順でソート
+        races.sort(key=lambda r: (r["jyo_name"], r["race_number"]))
         logger.info(f"Found {len(races)} races on {target_date}")
         return races
 
