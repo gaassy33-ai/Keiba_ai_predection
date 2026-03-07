@@ -1,10 +1,34 @@
 """
 LINE Messaging API を使って予測結果を Flex Message で送信する。
+
+create_prediction_message(race_data) が Flex JSON を生成するコア関数。
+race_data の構造:
+    {
+        "race_name":       str,   # "東京11R 日本ダービー GⅠ"
+        "grade":           str,   # "GⅠ" | "GⅡ" | "GⅢ" | "L" | "OP" | "一般"
+        "race_id":         str,   # "202405050811"  (netkeiba リンク用)
+        "venue":           str,   # "東京"
+        "course_type":     str,   # "芝" | "ダ"
+        "distance":        int,   # 2400
+        "weather":         str,   # "晴"
+        "ground_condition": str,  # "良"
+        "deadline":        str,   # "15:20"
+        "horses": [
+            {
+                "mark":         str,       # "◎" | "○" | "▲"
+                "horse_number": int,
+                "horse_name":   str,
+                "jockey_name":  str,
+                "win_prob":     float,     # 0.0-1.0
+                "tags":         list[str], # ["血統適性：高", "斤量減：有利"]
+            },
+            ...  # 最大3頭
+        ],
+    }
 """
 
 from __future__ import annotations
 
-from linebot.v3 import WebhookHandler
 from linebot.v3.messaging import (
     ApiClient,
     Configuration,
@@ -12,6 +36,7 @@ from linebot.v3.messaging import (
     PushMessageRequest,
     FlexMessage,
     FlexContainer,
+    TextMessage,
 )
 from loguru import logger
 
@@ -19,147 +44,359 @@ from config.settings import settings
 from src.model.predictor import PredictionResult
 
 
-def _build_flex_container(
-    result: PredictionResult,
-    shap_text: str,
-    ground_condition: str,
-    weather: str,
-) -> dict:
-    """
-    Flex Message の JSON 構造を組み立てる（bubble 形式）。
-    LINE Flex Message Simulator で確認可能。
-    """
+# ---------------------------------------------------------------------------
+# グレード別カラー定義
+# ---------------------------------------------------------------------------
+_GRADE_COLORS: dict[str, str] = {
+    "GⅠ":  "#C62828",  # 赤
+    "G1":  "#C62828",
+    "GⅡ":  "#1565C0",  # 濃青
+    "G2":  "#1565C0",
+    "GⅢ":  "#2E7D32",  # 濃緑
+    "G3":  "#2E7D32",
+    "L":   "#6A1B9A",  # 紫 (Listed)
+    "OP":  "#E65100",  # オレンジ
+    "一般": "#37474F",  # ダークグレー
+}
 
-    def horse_row(label: str, color: str, horse: dict) -> dict:
-        name = horse.get("horse_name", "---")
-        num = horse.get("horse_number", "-")
-        prob = horse.get("win_prob", 0)
-        return {
-            "type": "box",
-            "layout": "horizontal",
-            "contents": [
-                {
-                    "type": "text",
-                    "text": label,
-                    "size": "sm",
-                    "color": "#ffffff",
-                    "align": "center",
-                    "gravity": "center",
-                    "flex": 1,
-                    "backgroundColor": color,
-                    "decoration": "none",
-                },
-                {
-                    "type": "text",
-                    "text": f"#{num}",
-                    "size": "sm",
-                    "color": "#555555",
-                    "flex": 1,
-                    "align": "center",
-                },
-                {
-                    "type": "text",
-                    "text": name,
-                    "size": "sm",
-                    "color": "#111111",
-                    "flex": 3,
-                    "weight": "bold",
-                },
-                {
-                    "type": "text",
-                    "text": f"{prob:.1%}",
-                    "size": "sm",
-                    "color": "#888888",
-                    "flex": 2,
-                    "align": "end",
-                },
-            ],
-            "margin": "sm",
-            "paddingAll": "sm",
-            "backgroundColor": "#f9f9f9",
-            "cornerRadius": "md",
-        }
+# 印別スタイル定義
+_MARK_STYLES: dict[str, dict] = {
+    "◎": {"bg": "#C62828", "card_bg": "#fff8f8", "prob_color": "#C62828"},
+    "○": {"bg": "#1565C0", "card_bg": "#f3f8ff", "prob_color": "#1565C0"},
+    "▲": {"bg": "#2E7D32", "card_bg": "#f3fff5", "prob_color": "#2E7D32"},
+}
 
-    # SHAP 根拠を複数行のテキストコンポーネントに変換
-    shap_lines = [line for line in shap_text.split("\n") if line.strip()]
-    shap_components = [
-        {
-            "type": "text",
-            "text": line,
-            "size": "xs",
-            "color": "#555555",
-            "wrap": True,
-        }
-        for line in shap_lines
+# タグ色ローテーション（ポジティブ・ニュートラル・注意を交互に）
+_TAG_PALETTES = [
+    {"bg": "#E8F5E9", "text": "#2E7D32"},  # 緑
+    {"bg": "#E3F2FD", "text": "#1565C0"},  # 青
+    {"bg": "#FFF8E1", "text": "#F57F17"},  # 黄
+    {"bg": "#F3E5F5", "text": "#6A1B9A"},  # 紫
+]
+
+
+def _detect_grade(race_name: str) -> str:
+    """レース名文字列からグレードを推定する。"""
+    for grade in ("GⅠ", "G1", "GⅡ", "G2", "GⅢ", "G3", "L"):
+        if grade in race_name:
+            return grade
+    if "オープン" in race_name or "OP" in race_name:
+        return "OP"
+    return "一般"
+
+
+def _header_color(grade: str) -> str:
+    return _GRADE_COLORS.get(grade, _GRADE_COLORS["一般"])
+
+
+def _tag_badge(text: str, palette: dict) -> dict:
+    return {
+        "type": "box",
+        "layout": "vertical",
+        "backgroundColor": palette["bg"],
+        "cornerRadius": "md",
+        "paddingTop": "3px",
+        "paddingBottom": "3px",
+        "paddingStart": "8px",
+        "paddingEnd": "8px",
+        "contents": [
+            {
+                "type": "text",
+                "text": text,
+                "size": "xxs",
+                "color": palette["text"],
+            }
+        ],
+    }
+
+
+def _horse_card(horse: dict) -> dict:
+    """1頭分の馬カードコンポーネントを生成する。"""
+    mark = horse.get("mark", "◎")
+    style = _MARK_STYLES.get(mark, _MARK_STYLES["◎"])
+    num = str(horse.get("horse_number", "-"))
+    name = horse.get("horse_name", "---")
+    jockey = horse.get("jockey_name", "")
+    prob = horse.get("win_prob", 0.0)
+    tags: list[str] = horse.get("tags", [])
+
+    tag_badges = [
+        _tag_badge(t, _TAG_PALETTES[i % len(_TAG_PALETTES)])
+        for i, t in enumerate(tags[:4])  # 最大4タグ
     ]
+
+    return {
+        "type": "box",
+        "layout": "vertical",
+        "backgroundColor": style["card_bg"],
+        "cornerRadius": "lg",
+        "paddingAll": "md",
+        "contents": [
+            # --- 上段: 印 / 馬番 / 馬名 / 勝率 ---
+            {
+                "type": "box",
+                "layout": "horizontal",
+                "alignItems": "center",
+                "contents": [
+                    # 印バッジ
+                    {
+                        "type": "box",
+                        "layout": "vertical",
+                        "backgroundColor": style["bg"],
+                        "cornerRadius": "sm",
+                        "width": "30px",
+                        "height": "30px",
+                        "contents": [
+                            {
+                                "type": "text",
+                                "text": mark,
+                                "color": "#ffffff",
+                                "size": "sm",
+                                "align": "center",
+                                "gravity": "center",
+                            }
+                        ],
+                    },
+                    # 馬番バッジ
+                    {
+                        "type": "box",
+                        "layout": "vertical",
+                        "backgroundColor": "#1a237e",
+                        "cornerRadius": "sm",
+                        "width": "26px",
+                        "height": "26px",
+                        "margin": "sm",
+                        "contents": [
+                            {
+                                "type": "text",
+                                "text": num,
+                                "color": "#ffffff",
+                                "size": "xs",
+                                "align": "center",
+                                "gravity": "center",
+                            }
+                        ],
+                    },
+                    # 馬名
+                    {
+                        "type": "text",
+                        "text": name,
+                        "size": "md",
+                        "weight": "bold",
+                        "color": "#111111",
+                        "flex": 1,
+                        "margin": "sm",
+                        "wrap": True,
+                    },
+                    # 予測勝率
+                    {
+                        "type": "text",
+                        "text": f"{prob:.1%}",
+                        "size": "lg",
+                        "weight": "bold",
+                        "color": style["prob_color"],
+                        "align": "end",
+                    },
+                ],
+            },
+            # --- 騎手 ---
+            {
+                "type": "text",
+                "text": f"騎手：{jockey}" if jockey else "",
+                "size": "xs",
+                "color": "#888888",
+                "margin": "xs",
+            },
+            # --- タグ行 ---
+            *(
+                [
+                    {
+                        "type": "box",
+                        "layout": "horizontal",
+                        "spacing": "sm",
+                        "margin": "sm",
+                        "flexWrap": "wrap",
+                        "contents": tag_badges,
+                    }
+                ]
+                if tag_badges
+                else []
+            ),
+        ],
+    }
+
+
+def create_prediction_message(race_data: dict) -> dict:
+    """
+    Flex Message の JSON 構造（bubble）を生成する。
+
+    Parameters
+    ----------
+    race_data : dict
+        モジュール docstring を参照。
+
+    Returns
+    -------
+    dict
+        FlexContainer.from_dict() に渡せる JSON 辞書。
+    """
+    race_name = race_data.get("race_name", "レース情報")
+    grade = race_data.get("grade") or _detect_grade(race_name)
+    race_id = race_data.get("race_id", "")
+    venue = race_data.get("venue", "")
+    course_type = race_data.get("course_type", "")
+    distance = race_data.get("distance", "")
+    weather = race_data.get("weather", "")
+    ground_condition = race_data.get("ground_condition", "")
+    deadline = race_data.get("deadline", "")
+    horses: list[dict] = race_data.get("horses", [])
+
+    header_bg = _header_color(grade)
+    course_label = f"{course_type} {distance}m" if distance else course_type
+    weather_label = f"{'☀' if weather == '晴' else '☁' if '曇' in weather else '🌧' if '雨' in weather else ''} {weather} / {ground_condition}".strip()
+
+    netkeiba_url = (
+        f"https://race.netkeiba.com/race/shutuba.html?race_id={race_id}"
+        if race_id
+        else "https://race.netkeiba.com/"
+    )
+
+    # 馬カードリスト（セパレーター付き）
+    horse_cards: list[dict] = []
+    for i, horse in enumerate(horses[:3]):
+        if i > 0:
+            horse_cards.append({"type": "separator", "margin": "sm"})
+        horse_cards.append(_horse_card(horse))
 
     return {
         "type": "bubble",
         "size": "mega",
+        # ---- ヘッダー ----
         "header": {
             "type": "box",
             "layout": "vertical",
-            "backgroundColor": "#1a237e",
-            "paddingAll": "md",
+            "backgroundColor": header_bg,
+            "paddingAll": "lg",
             "contents": [
+                # タイトル行（ラベル + グレードバッジ）
                 {
-                    "type": "text",
-                    "text": "馬券AI予想",
-                    "color": "#ffffff",
-                    "size": "xs",
-                    "weight": "bold",
+                    "type": "box",
+                    "layout": "horizontal",
+                    "contents": [
+                        {
+                            "type": "text",
+                            "text": "馬券AI予想",
+                            "color": "#ffcccc",
+                            "size": "xs",
+                            "flex": 1,
+                        },
+                        {
+                            "type": "box",
+                            "layout": "vertical",
+                            "backgroundColor": "#ffffff",
+                            "cornerRadius": "sm",
+                            "paddingTop": "2px",
+                            "paddingBottom": "2px",
+                            "paddingStart": "8px",
+                            "paddingEnd": "8px",
+                            "contents": [
+                                {
+                                    "type": "text",
+                                    "text": grade,
+                                    "size": "xs",
+                                    "color": header_bg,
+                                    "weight": "bold",
+                                }
+                            ],
+                        },
+                    ],
                 },
+                # レース名
                 {
                     "type": "text",
-                    "text": result.race_name,
+                    "text": race_name,
                     "color": "#ffffff",
                     "size": "lg",
                     "weight": "bold",
                     "wrap": True,
-                },
-                {
-                    "type": "text",
-                    "text": f"天候: {weather}　馬場: {ground_condition}",
-                    "color": "#aaaaff",
-                    "size": "xs",
                     "margin": "sm",
+                },
+                # コース情報 / 天候
+                {
+                    "type": "box",
+                    "layout": "horizontal",
+                    "margin": "sm",
+                    "contents": [
+                        {
+                            "type": "text",
+                            "text": course_label,
+                            "color": "#ffcccc",
+                            "size": "xs",
+                            "flex": 1,
+                        },
+                        {
+                            "type": "text",
+                            "text": weather_label,
+                            "color": "#ffcccc",
+                            "size": "xs",
+                            "align": "end",
+                        },
+                    ],
                 },
             ],
         },
+        # ---- ボディ ----
         "body": {
             "type": "box",
             "layout": "vertical",
-            "spacing": "md",
-            "contents": [
-                # 予想馬セクション
-                {
-                    "type": "text",
-                    "text": "今日の予想",
-                    "size": "sm",
-                    "weight": "bold",
-                    "color": "#333333",
-                },
-                horse_row("本命", "#e53935", result.honmei),
-                horse_row("対抗", "#1e88e5", result.taikou),
-                horse_row("穴馬", "#43a047", result.ana),
-                # 区切り
-                {"type": "separator", "margin": "md"},
-                # SHAP 根拠
-                {
-                    "type": "text",
-                    "text": "予測根拠（AI説明）",
-                    "size": "sm",
-                    "weight": "bold",
-                    "color": "#333333",
-                    "margin": "md",
-                },
-                *shap_components,
-            ],
+            "spacing": "sm",
+            "paddingAll": "md",
+            "contents": horse_cards,
         },
+        # ---- フッター ----
         "footer": {
             "type": "box",
             "layout": "vertical",
+            "spacing": "sm",
+            "paddingAll": "md",
+            "backgroundColor": "#fafafa",
             "contents": [
+                # 締め切り時刻
+                {
+                    "type": "box",
+                    "layout": "horizontal",
+                    "contents": [
+                        {
+                            "type": "text",
+                            "text": "⏰ 締め切り",
+                            "size": "sm",
+                            "color": "#555555",
+                            "flex": 1,
+                        },
+                        {
+                            "type": "text",
+                            "text": deadline if deadline else "---",
+                            "size": "sm",
+                            "weight": "bold",
+                            "color": "#C62828",
+                            "align": "end",
+                        },
+                    ],
+                },
+                # netkeiba リンクボタン
+                {
+                    "type": "button",
+                    "action": {
+                        "type": "uri",
+                        "label": "netkeiba で詳細を見る",
+                        "uri": netkeiba_url,
+                    },
+                    "style": "primary",
+                    "color": "#1a237e",
+                    "height": "sm",
+                    "margin": "sm",
+                },
+                # 免責
                 {
                     "type": "text",
                     "text": "※ 予想は参考情報です。馬券購入は自己責任でお願いします。",
@@ -167,21 +404,119 @@ def _build_flex_container(
                     "color": "#aaaaaa",
                     "wrap": True,
                     "align": "center",
-                }
+                    "margin": "sm",
+                },
             ],
         },
         "styles": {
-            "footer": {"backgroundColor": "#f5f5f5"},
+            "footer": {"separator": True},
         },
     }
 
+
+# ---------------------------------------------------------------------------
+# PredictionResult → race_data 変換ヘルパー
+# ---------------------------------------------------------------------------
+
+# SHAP feature名 → タグ文字列マッピング
+_FEATURE_TAG_MAP: dict[str, tuple[str, str]] = {
+    "sire_win_rate":           ("血統適性", "高", "低"),
+    "bms_win_rate":            ("母父適性", "高", "低"),
+    "jockey_course_win_rate":  ("騎手コース実績", "高", "低"),
+    "horse_recent_win_rate":   ("直近勝率", "高", "低"),
+    "distance":                ("距離適性", "高", "低"),
+    "weight_carried":          ("斤量", "軽", "重"),
+    "frame_number":            ("枠順", "有利", "不利"),
+    "ground_condition_code":   ("馬場状態", "適性高", "適性低"),
+    "weather_code":            ("天候", "適性高", "適性低"),
+}
+
+
+def _shap_text_to_tags(shap_text: str, horse_name: str) -> list[str]:
+    """
+    SHAP テキストから当該馬のタグリストを生成する。
+    shap_text の各行の形式: "  ▲ feature_name: +0.05" or "  ▽ feature_name: -0.03"
+    """
+    tags: list[str] = []
+    for line in shap_text.split("\n"):
+        if horse_name not in line and not line.startswith("  "):
+            continue
+        direction = "▲" if "▲" in line else ("▽" if "▽" in line else None)
+        if direction is None:
+            continue
+        for feature, (label, pos_word, neg_word) in _FEATURE_TAG_MAP.items():
+            if feature in line:
+                word = f"{label}：{pos_word}" if direction == "▲" else f"{label}：{neg_word}"
+                tags.append(word)
+                break
+        if len(tags) >= 3:
+            break
+    return tags
+
+
+def _result_to_race_data(
+    result: PredictionResult,
+    shap_text: str,
+    ground_condition: str,
+    weather: str,
+) -> dict:
+    """PredictionResult を create_prediction_message() 用の race_data に変換する。"""
+    grade = _detect_grade(result.race_name)
+
+    horses = []
+    for mark, mark_char in [("honmei", "◎"), ("taikou", "○"), ("ana", "▲")]:
+        horse: dict = getattr(result, mark, {})
+        if not horse:
+            continue
+        tags = _shap_text_to_tags(shap_text, horse.get("horse_name", ""))
+        horses.append(
+            {
+                "mark": mark_char,
+                "horse_number": horse.get("horse_number", "-"),
+                "horse_name": horse.get("horse_name", "---"),
+                "jockey_name": horse.get("jockey_name", ""),
+                "win_prob": horse.get("win_prob", 0.0),
+                "tags": tags,
+            }
+        )
+
+    # 発走時刻から締め切り時刻を推定（発走の2分前）
+    start_time = getattr(result, "start_time", None)
+    if start_time:
+        from datetime import timedelta
+        deadline_dt = start_time - timedelta(minutes=2)
+        deadline = deadline_dt.strftime("%H:%M")
+    else:
+        deadline = ""
+
+    return {
+        "race_name": result.race_name,
+        "grade": grade,
+        "race_id": getattr(result, "race_id", ""),
+        "venue": getattr(result, "venue", ""),
+        "course_type": getattr(result, "course_type", ""),
+        "distance": getattr(result, "distance", ""),
+        "weather": weather,
+        "ground_condition": ground_condition,
+        "deadline": deadline,
+        "horses": horses,
+    }
+
+
+# ---------------------------------------------------------------------------
+# LineNotifier
+# ---------------------------------------------------------------------------
 
 class LineNotifier:
     """
     Usage
     -----
+    # 高レベル API（PredictionResult を直接渡す）
     >>> notifier = LineNotifier()
     >>> notifier.send_prediction(result, shap_text, "良", "晴")
+
+    # 低レベル API（race_data dict を直接渡す）
+    >>> notifier.send_flex(race_data)
     """
 
     def __init__(self) -> None:
@@ -189,15 +524,43 @@ class LineNotifier:
         self._api_client = ApiClient(config)
         self._messaging_api = MessagingApi(self._api_client)
 
+    def send_flex(self, race_data: dict) -> None:
+        """
+        race_data dict から Flex Message を組み立てて送信する。
+
+        Parameters
+        ----------
+        race_data : dict
+            create_prediction_message() が受け付ける構造。
+        """
+        container_dict = create_prediction_message(race_data)
+        race_name = race_data.get("race_name", "レース")
+        top_horse = race_data.get("horses", [{}])[0].get("horse_name", "")
+
+        flex_msg = FlexMessage(
+            alt_text=f"【AI競馬予想】{race_name}  本命: {top_horse}",
+            contents=FlexContainer.from_dict(container_dict),
+        )
+        push_req = PushMessageRequest(
+            to=settings.line_target_user_id,
+            messages=[flex_msg],
+        )
+        try:
+            self._messaging_api.push_message(push_req)
+            logger.info(f"LINE notification sent for {race_name}")
+        except Exception as e:
+            logger.error(f"Failed to send LINE notification: {e}")
+            raise
+
     def send_prediction(
         self,
         result: PredictionResult,
-        shap_text: str,
+        shap_text: str = "",
         ground_condition: str = "不明",
         weather: str = "不明",
     ) -> None:
         """
-        Flex Message として予測結果を LINE に送信する。
+        PredictionResult から Flex Message を組み立てて送信する。
 
         Parameters
         ----------
@@ -209,29 +572,11 @@ class LineNotifier:
         weather : str
             天候
         """
-        container_dict = _build_flex_container(result, shap_text, ground_condition, weather)
-
-        flex_msg = FlexMessage(
-            alt_text=f"【AI競馬予想】{result.race_name} 本命: {result.honmei.get('horse_name', '')}",
-            contents=FlexContainer.from_dict(container_dict),
-        )
-
-        push_req = PushMessageRequest(
-            to=settings.line_target_user_id,
-            messages=[flex_msg],
-        )
-
-        try:
-            self._messaging_api.push_message(push_req)
-            logger.info(f"LINE notification sent for {result.race_name}")
-        except Exception as e:
-            logger.error(f"Failed to send LINE notification: {e}")
-            raise
+        race_data = _result_to_race_data(result, shap_text, ground_condition, weather)
+        self.send_flex(race_data)
 
     def send_text(self, text: str) -> None:
-        """シンプルなテキストメッセージ送信（エラー通知用）。"""
-        from linebot.v3.messaging import TextMessage
-
+        """シンプルなテキストメッセージ送信（エラー通知・テスト用）。"""
         push_req = PushMessageRequest(
             to=settings.line_target_user_id,
             messages=[TextMessage(text=text)],
