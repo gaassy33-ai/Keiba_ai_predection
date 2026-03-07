@@ -42,6 +42,7 @@ from loguru import logger
 
 from config.settings import settings
 from src.model.predictor import PredictionResult
+from src.betting.strategy import BetLine, BET_TYPE_COLOR
 
 
 # ---------------------------------------------------------------------------
@@ -226,6 +227,119 @@ def _horse_card(horse: dict) -> dict:
     }
 
 
+# ---------------------------------------------------------------------------
+# 買い目セクション Flex ビルダー
+# ---------------------------------------------------------------------------
+
+def _bet_row(bet: BetLine) -> dict:
+    """1券種グループを横並びカードで表示する。"""
+    color = BET_TYPE_COLOR.get(bet.bet_type, "#37474F")
+    icon = "🔥 " if bet.is_featured else ""
+    alloc_color = "#C62828" if bet.is_featured else "#333333"
+    card_bg = "#fff5f5" if bet.is_featured else "#fafafa"
+
+    return {
+        "type": "box",
+        "layout": "horizontal",
+        "margin": "sm",
+        "paddingAll": "sm",
+        "backgroundColor": card_bg,
+        "cornerRadius": "md",
+        "alignItems": "center",
+        "contents": [
+            # 券種バッジ
+            {
+                "type": "box",
+                "layout": "vertical",
+                "backgroundColor": color,
+                "cornerRadius": "sm",
+                "width": "44px",
+                "paddingTop": "3px",
+                "paddingBottom": "3px",
+                "paddingStart": "4px",
+                "paddingEnd": "4px",
+                "contents": [
+                    {
+                        "type": "text",
+                        "text": bet.bet_type,
+                        "size": "xxs",
+                        "color": "#ffffff",
+                        "weight": "bold",
+                        "align": "center",
+                    }
+                ],
+            },
+            # ラベル / 説明
+            {
+                "type": "box",
+                "layout": "vertical",
+                "flex": 1,
+                "margin": "sm",
+                "contents": [
+                    {
+                        "type": "text",
+                        "text": f"{icon}{bet.label}",
+                        "size": "xs",
+                        "weight": "bold" if bet.is_featured else "regular",
+                        "color": "#111111",
+                        "wrap": True,
+                    },
+                    {
+                        "type": "text",
+                        "text": f"EV:{bet.ev:.2f}  {bet.combo_count}点",
+                        "size": "xxs",
+                        "color": "#888888",
+                    },
+                ],
+            },
+            # 投資額
+            {
+                "type": "text",
+                "text": f"¥{bet.allocation:,}",
+                "size": "sm",
+                "weight": "bold",
+                "color": alloc_color,
+                "align": "end",
+            },
+        ],
+    }
+
+
+def _betting_section(bets: list[BetLine], budget: int = 10_000) -> list[dict]:
+    """買い目セクション全体のコンポーネントリストを返す。bets が空なら空リスト。"""
+    if not bets:
+        return []
+
+    used = sum(b.allocation for b in bets)
+    components: list[dict] = [
+        {"type": "separator", "margin": "lg"},
+        {
+            "type": "box",
+            "layout": "horizontal",
+            "margin": "lg",
+            "contents": [
+                {
+                    "type": "text",
+                    "text": "🎯 推奨買い目",
+                    "size": "sm",
+                    "weight": "bold",
+                    "color": "#333333",
+                    "flex": 1,
+                },
+                {
+                    "type": "text",
+                    "text": f"予算 ¥{used:,} / ¥{budget:,}",
+                    "size": "xs",
+                    "color": "#888888",
+                    "align": "end",
+                },
+            ],
+        },
+        *[_bet_row(b) for b in bets],
+    ]
+    return components
+
+
 def create_prediction_message(race_data: dict) -> dict:
     """
     Flex Message の JSON 構造（bubble）を生成する。
@@ -267,6 +381,11 @@ def create_prediction_message(race_data: dict) -> dict:
         if i > 0:
             horse_cards.append({"type": "separator", "margin": "sm"})
         horse_cards.append(_horse_card(horse))
+
+    # 買い目セクション
+    strategies: list[BetLine] = race_data.get("strategies", [])
+    budget: int = race_data.get("budget", 10_000)
+    bet_components = _betting_section(strategies, budget)
 
     return {
         "type": "bubble",
@@ -351,7 +470,7 @@ def create_prediction_message(race_data: dict) -> dict:
             "layout": "vertical",
             "spacing": "sm",
             "paddingAll": "md",
-            "contents": horse_cards,
+            "contents": [*horse_cards, *bet_components],
         },
         # ---- フッター ----
         "footer": {
