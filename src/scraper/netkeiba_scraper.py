@@ -497,14 +497,20 @@ class NetkeibaScraper:
             jockey_link = tr.select_one("td.Jockey a")
             trainer_link = tr.select_one("td.Trainer a")
 
+            waku_span   = tr.select_one("td.Waku span")
+            umaban_td   = tr.select_one("td.Umaban")
+            barei_td    = tr.select_one("td.Barei")
+            futan_td    = tr.select_one("td.Futan")
+            barei_text  = barei_td.get_text(strip=True) if barei_td else ""
+
             entries.append(HorseRecord(
                 horse_id=horse_link["href"].split("/")[-2] if horse_link else "",
                 horse_name=horse_link.get_text(strip=True) if horse_link else "",
-                frame_number=int(tr.select_one("td.Waku span").get_text(strip=True) or 0),
-                horse_number=int(tr.select_one("td.Umaban").get_text(strip=True) or 0),
-                sex=tr.select_one("td.Barei").get_text(strip=True)[0] if tr.select_one("td.Barei") else "",
-                age=int(tr.select_one("td.Barei").get_text(strip=True)[1:] or 0) if tr.select_one("td.Barei") else 0,
-                weight_carried=float(tr.select_one("td.Futan").get_text(strip=True) or 0),
+                frame_number=int(waku_span.get_text(strip=True) or 0) if waku_span else 0,
+                horse_number=int(umaban_td.get_text(strip=True) or 0) if umaban_td else 0,
+                sex=barei_text[0] if barei_text else "",
+                age=int(barei_text[1:] or 0) if len(barei_text) > 1 else 0,
+                weight_carried=float(futan_td.get_text(strip=True) or 0) if futan_td else 0.0,
                 jockey_id=jockey_link["href"].split("/")[-2] if jockey_link else "",
                 jockey_name=jockey_link.get_text(strip=True) if jockey_link else "",
                 trainer_id=trainer_link["href"].split("/")[-2] if trainer_link else "",
