@@ -42,7 +42,7 @@ RICH_MENU_DEF: dict = {
             "action": {
                 "type": "uri",
                 "label": "今日のメインレース",
-                "uri": "https://gaassy33-ai.github.io/Keiba_ai_predection/today.html",
+                "uri": "https://liff.line.me/2009359724-yHDAAeZg",
             },
         },
         # ② 開催スケジュール（右上 / URL）
@@ -60,7 +60,7 @@ RICH_MENU_DEF: dict = {
             "action": {
                 "type": "uri",
                 "label": "今日の成績",
-                "uri": "https://gaassy33-ai.github.io/Keiba_ai_predection/results.html",
+                "uri": "https://liff.line.me/2009359724-oGG4JgxI",
             },
         },
         # ④ お問い合わせ/SNS（右下 / URL）
