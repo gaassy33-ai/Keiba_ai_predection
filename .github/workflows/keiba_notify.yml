@@ -10,6 +10,11 @@ on:
     - cron: "0,20,40 0-7 * * 0"     # 日 00-07 UTC = 日 09-16 JST
   # 手動実行（デバッグ・祝日開催時など）
   workflow_dispatch:
+    inputs:
+      test_mode:
+        description: "テスト通知を送る（LINE 接続確認用）"
+        type: boolean
+        default: false
 
 jobs:
   notify:
@@ -42,7 +47,12 @@ jobs:
           NETKEIBA_PASSWORD: ${{ secrets.NETKEIBA_PASSWORD }}
           SELENIUM_HEADLESS: "true"
           TZ: "Asia/Tokyo"
-        run: python -m src.scheduler.runner --once
+        run: |
+          if [ "${{ github.event.inputs.test_mode }}" = "true" ]; then
+            python -m src.scheduler.runner --test
+          else
+            python -m src.scheduler.runner --once
+          fi
 
       - name: Upload logs on failure
         if: failure()

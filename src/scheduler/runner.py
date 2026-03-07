@@ -199,6 +199,16 @@ def run_once_for_date(target_date: date) -> None:
             run_pipeline_for_race(race)
 
 
+def send_test_notification() -> None:
+    """LINE 接続確認用のテスト通知を送る。"""
+    notifier = LineNotifier()
+    notifier.send_text(
+        "【テスト】競馬予想AI の LINE 通知設定が完了しました。\n"
+        "土日のレース20分前に予想が届きます。"
+    )
+    logger.info("Test notification sent.")
+
+
 def main() -> None:
     """CLI エントリーポイント: keiba-run"""
     _setup_logger()
@@ -209,7 +219,17 @@ def main() -> None:
         action="store_true",
         help="GitHub Actions 用: 現時刻付近のレースのみ即時実行して終了",
     )
+    parser.add_argument(
+        "--test",
+        action="store_true",
+        help="LINE 接続確認用のテスト通知を送って終了",
+    )
     args = parser.parse_args()
+
+    if args.test:
+        logger.info("Sending test LINE notification...")
+        send_test_notification()
+        return
 
     if args.once:
         logger.info("Running in --once mode (GitHub Actions)")
