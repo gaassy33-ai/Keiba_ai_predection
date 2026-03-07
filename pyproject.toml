@@ -1,0 +1,62 @@
+[project]
+name = "keiba-prediction"
+version = "0.1.0"
+description = "競馬予想 → LINE通知パイプライン"
+requires-python = ">=3.11"
+
+dependencies = [
+    # スクレイピング
+    "requests>=2.31.0",
+    "beautifulsoup4>=4.12.0",
+    "lxml>=5.1.0",
+    "selenium>=4.18.0",
+    "webdriver-manager>=4.0.1",
+
+    # データ処理
+    "pandas>=2.2.0",
+    "numpy>=1.26.0",
+
+    # 機械学習
+    "lightgbm>=4.3.0",
+    "scikit-learn>=1.4.0",
+    "shap>=0.44.0",
+
+    # LINE Bot SDK
+    "line-bot-sdk>=3.10.0",
+
+    # スケジューラー
+    "schedule>=1.2.1",
+    "python-dateutil>=2.9.0",
+    "pytz>=2024.1",
+
+    # 設定管理
+    "python-dotenv>=1.0.1",
+    "pydantic>=2.6.0",
+    "pydantic-settings>=2.2.0",
+
+    # ユーティリティ
+    "matplotlib>=3.8.0",
+    "joblib>=1.3.0",
+    "tenacity>=8.2.3",     # リトライ
+    "loguru>=0.7.2",       # ロギング
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "httpretty>=1.1.4",
+    "ruff>=0.3.0",
+]
+
+[project.scripts]
+keiba-run = "src.scheduler.runner:main"
+keiba-train = "src.model.trainer:main"
+keiba-collect = "src.collect:main"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]

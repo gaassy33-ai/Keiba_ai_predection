@@ -1,0 +1,58 @@
+name: Race Notification (20-min before)
+
+on:
+  # 競馬開催日（土日）の 8:00 〜 17:00 JST を 20 分おきに実行
+  # UTC = JST - 9h。8:00 JST = 23:00 UTC (前日)、17:00 JST = 08:00 UTC
+  schedule:
+    - cron: "0,20,40 23-23 * * 5"   # 金 23:00-23:40 UTC = 土 8:00-8:40 JST
+    - cron: "0,20,40 0-8 * * 6"     # 土 00:00-08:40 UTC = 土 9:00-17:40 JST
+    - cron: "0,20,40 23-23 * * 6"   # 土 23:00-23:40 UTC = 日 8:00-8:40 JST
+    - cron: "0,20,40 0-8 * * 0"     # 日 00:00-08:40 UTC = 日 9:00-17:40 JST
+  # 手動実行
+  workflow_dispatch:
+    inputs:
+      target_race_id:
+        description: "特定のレースIDを指定（空の場合は自動検出）"
+        required: false
+        default: ""
+
+jobs:
+  notify:
+    name: Run prediction pipeline
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Install Chrome & ChromeDriver
+        uses: browser-actions/setup-chrome@v1
+
+      - name: Run notification pipeline
+        env:
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          LINE_CHANNEL_SECRET: ${{ secrets.LINE_CHANNEL_SECRET }}
+          LINE_TARGET_USER_ID: ${{ secrets.LINE_TARGET_USER_ID }}
+          NETKEIBA_EMAIL: ${{ secrets.NETKEIBA_EMAIL }}
+          NETKEIBA_PASSWORD: ${{ secrets.NETKEIBA_PASSWORD }}
+          SELENIUM_HEADLESS: "true"
+          TZ: "Asia/Tokyo"
+        run: |
+          python -m src.scheduler.runner --once
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs
+          path: logs/

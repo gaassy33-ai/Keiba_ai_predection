@@ -1,0 +1,60 @@
+name: モデル週次再学習
+
+on:
+  # 毎週月曜 02:00 JST（日曜レース結果が出揃った後）
+  schedule:
+    - cron: "0 17 * * 0"   # 日 17:00 UTC = 月 02:00 JST
+  workflow_dispatch:
+
+jobs:
+  train:
+    name: データ収集 & 再学習 & モデル push
+    runs-on: ubuntu-latest
+    timeout-minutes: 360   # 最大 6 時間（データ収集を含む）
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # モデルファイルを push するために書き込みトークンが必要
+          token: ${{ secrets.GH_PAT }}
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Install Chrome & ChromeDriver
+        uses: browser-actions/setup-chrome@v1
+
+      - name: 直近 1 年分のデータ収集
+        env:
+          NETKEIBA_EMAIL: ${{ secrets.NETKEIBA_EMAIL }}
+          NETKEIBA_PASSWORD: ${{ secrets.NETKEIBA_PASSWORD }}
+          SELENIUM_HEADLESS: "true"
+          TZ: "Asia/Tokyo"
+        run: |
+          # 過去 12 ヶ月のデータを収集（既存チェックポイントがあればスキップ）
+          YEAR=$(date -d '1 year ago' +%Y)
+          python -m src.collect \
+            --start ${YEAR}-01-01 \
+            --jyo 05,06,08,09 \
+            --checkpoint-prefix data/raw/checkpoint
+
+      - name: モデル再学習
+        env:
+          TZ: "Asia/Tokyo"
+        run: python -m src.model.trainer
+
+      - name: モデルをリポジトリに commit & push
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/models/lgbm_model.pkl
+          git diff --staged --quiet && echo "No model changes" && exit 0
+          git commit -m "chore: update model $(date +'%Y-%m-%d')"
+          git push
