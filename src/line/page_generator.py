@@ -17,6 +17,9 @@ import pandas as pd
 
 PAGES_BASE_URL = "https://gaassy33-ai.github.io/Keiba_ai_predection"
 
+LIFF_ID_TODAY   = "2009359724-yHDAAeZg"
+LIFF_ID_RESULTS = "2009359724-oGG4JgxI"
+
 _CSS = """
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
@@ -154,6 +157,11 @@ def _html_doc(title: str, body: str, active_page: str = "") -> str:
     updated = datetime.now().strftime("%Y/%m/%d %H:%M 更新")
     nav_today   = "active" if active_page == "today"   else ""
     nav_results = "active" if active_page == "results" else ""
+
+    liff_id = LIFF_ID_TODAY if active_page == "today" else LIFF_ID_RESULTS
+    today_url   = f"https://liff.line.me/{LIFF_ID_TODAY}"
+    results_url = f"https://liff.line.me/{LIFF_ID_RESULTS}"
+
     return f"""<!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -161,11 +169,15 @@ def _html_doc(title: str, body: str, active_page: str = "") -> str:
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{html.escape(title)}</title>
 <style>{_CSS}</style>
+<script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<script>
+  liff.init({{ liffId: "{liff_id}" }}).catch(function(e) {{ console.error(e); }});
+</script>
 </head>
 <body>
 <nav class="nav">
-  <a href="today.html"   class="{nav_today}">AI予想</a>
-  <a href="results.html" class="{nav_results}">今日の成績</a>
+  <a href="{today_url}"   class="{nav_today}">AI予想</a>
+  <a href="{results_url}" class="{nav_results}">今日の成績</a>
 </nav>
 {body}
 <p class="updated">{updated}</p>
