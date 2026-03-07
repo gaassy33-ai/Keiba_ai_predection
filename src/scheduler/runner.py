@@ -228,86 +228,137 @@ def run_morning_pages() -> None:
     """
     朝7時に当日メインレース（最大R番号）の予想ページを生成する。
     LINE通知は行わない。
+
+    段階的フォールバック:
+    1. 完全予測成功   → 予測付きページを生成
+    2. 予測失敗       → 出走表のみのページを生成
+    3. スケジュール取得失敗 → 何もしない（終了）
     """
     import pandas as pd
-    from src.line.notifier import _result_to_race_data
     from src.line.page_generator import generate_prediction_page, generate_results_page
-    from src.betting.strategy import generate_betting_strategies
 
-    fetcher = RaceScheduleFetcher()
-    races = fetcher.fetch_race_list(date.today())
-    races = fetcher.filter_by_jyo(races)
-
-    if not races:
-        logger.info("本日の対象レースなし。ページ生成をスキップします。")
+    # ── STEP 1: レーススケジュール取得 ────────────────────────────────
+    try:
+        fetcher = RaceScheduleFetcher()
+        races = fetcher.fetch_race_list(date.today())
+        races = fetcher.filter_by_jyo(races)
+        if not races:
+            logger.info("本日の対象レースなし。ページ生成をスキップします。")
+            return
+        main_race  = select_main_race(races)
+        race_id    = main_race["race_id"]
+        race_name  = main_race.get("race_name", race_id)
+        start_time = main_race.get("start_time")
+        deadline   = start_time.strftime("%H:%M") if start_time else ""
+        logger.info(f"Morning pages: {race_name} ({race_id})")
+    except Exception as e:
+        logger.error(f"レーススケジュール取得失敗: {e}")
         return
 
-    main_race = select_main_race(races)
-    race_id   = main_race["race_id"]
-    race_name = main_race.get("race_name", race_id)
-    logger.info(f"Morning pages: {race_name} ({race_id})")
+    # ── STEP 2: 完全予測パイプライン ──────────────────────────────────
+    try:
+        from src.line.notifier import _result_to_race_data
+        from src.betting.strategy import generate_betting_strategies
 
-    # 天候
-    weather_fetcher = WeatherFetcher()
-    weather_info = weather_fetcher.fetch(race_id)
+        weather_fetcher = WeatherFetcher()
+        weather_info = weather_fetcher.fetch(race_id)
 
-    # 出走表 + 血統
-    with NetkeibaScraper() as scraper:
-        race_info = scraper.fetch_today_entries(race_id)
-        pedigree_map: dict[str, dict] = {}
-        for entry in race_info.entries:
-            if entry.horse_id:
-                pedigree_map[entry.horse_id] = scraper.fetch_horse_pedigree(entry.horse_id)
+        with NetkeibaScraper() as scraper:
+            race_info = scraper.fetch_today_entries(race_id)
+            pedigree_map: dict[str, dict] = {}
+            for entry in race_info.entries:
+                if entry.horse_id:
+                    pedigree_map[entry.horse_id] = scraper.fetch_horse_pedigree(entry.horse_id)
 
-    entry_records = []
-    for e in race_info.entries:
-        ped = pedigree_map.get(e.horse_id, {})
-        entry_records.append({
-            "horse_id":       e.horse_id,
-            "horse_name":     e.horse_name,
-            "horse_number":   e.horse_number,
-            "frame_number":   e.frame_number,
-            "sex":            e.sex,
-            "age":            e.age,
-            "weight_carried": e.weight_carried,
-            "jockey_id":      e.jockey_id,
-            "jockey_name":    e.jockey_name,
-            "father":         ped.get("father", ""),
-            "mother_father":  ped.get("mother_father", ""),
-        })
-    entry_df = pd.DataFrame(entry_records)
+        entry_records = []
+        for e in race_info.entries:
+            ped = pedigree_map.get(e.horse_id, {})
+            entry_records.append({
+                "horse_id":       e.horse_id,
+                "horse_name":     e.horse_name,
+                "horse_number":   e.horse_number,
+                "frame_number":   e.frame_number,
+                "sex":            e.sex,
+                "age":            e.age,
+                "weight_carried": e.weight_carried,
+                "jockey_id":      e.jockey_id,
+                "jockey_name":    e.jockey_name,
+                "father":         ped.get("father", ""),
+                "mother_father":  ped.get("mother_father", ""),
+            })
+        entry_df = pd.DataFrame(entry_records)
 
-    fe = FeatureEngineer(pd.DataFrame())
-    feature_df = fe.build_entry_features(
-        entry_df=entry_df,
-        course_type=race_info.course_type,
-        distance=race_info.distance,
-        ground_condition_code=weather_info["ground_condition_code"],
-        weather_code=weather_info["weather_code"],
-    )
+        fe = FeatureEngineer(pd.DataFrame())
+        feature_df = fe.build_entry_features(
+            entry_df=entry_df,
+            course_type=race_info.course_type,
+            distance=race_info.distance,
+            ground_condition_code=weather_info["ground_condition_code"],
+            weather_code=weather_info["weather_code"],
+        )
 
-    predictor = RacePredictor.from_saved_model()
-    result    = predictor.predict(race_id, race_name, feature_df)
+        predictor = RacePredictor.from_saved_model()
+        result    = predictor.predict(race_id, race_name, feature_df)
 
-    trainer   = ModelTrainer.load()
-    explainer = PredictionExplainer(trainer)
-    shap_text = explainer.explain_text(result, feature_df) if settings.enable_shap else ""
+        trainer   = ModelTrainer.load()
+        explainer = PredictionExplainer(trainer)
+        shap_text = explainer.explain_text(result, feature_df) if settings.enable_shap else ""
 
-    race_data = _result_to_race_data(
-        result=result,
-        shap_text=shap_text,
-        ground_condition=weather_info["ground_condition"],
-        weather=weather_info["weather"],
-    )
-    top_horses = [h for h in [result.honmei, result.taikou, result.ana] if h]
-    for h in top_horses:
-        h.setdefault("win_odds", None)
-    race_data["strategies"] = generate_betting_strategies(top_horses)
-    race_data["budget"] = 10_000
+        race_data = _result_to_race_data(
+            result=result,
+            shap_text=shap_text,
+            ground_condition=weather_info["ground_condition"],
+            weather=weather_info["weather"],
+        )
+        top_horses = [h for h in [result.honmei, result.taikou, result.ana] if h]
+        for h in top_horses:
+            h.setdefault("win_odds", None)
+        race_data["strategies"] = generate_betting_strategies(top_horses)
+        race_data["budget"] = 10_000
 
-    generate_prediction_page(race_data, Path("docs/today.html"))
-    generate_results_page(date.today(), Path("docs/results.html"))
-    logger.info("Morning pages generated.")
+        generate_prediction_page(race_data, Path("docs/today.html"))
+        generate_results_page(date.today(), Path("docs/results.html"))
+        logger.info("Morning pages generated with full prediction.")
+
+    except Exception as e:
+        # ── フォールバック: 出走表のみのページを生成 ──────────────────
+        logger.warning(f"完全予測失敗（{type(e).__name__}: {e}）。出走表のみのページを生成します。")
+        try:
+            _generate_entries_page(race_id, race_name, deadline, Path("docs/today.html"))
+            generate_results_page(date.today(), Path("docs/results.html"))
+            logger.info("Morning pages generated with entries only (fallback).")
+        except Exception as e2:
+            logger.error(f"フォールバックページ生成も失敗: {e2}")
+
+
+def _generate_entries_page(race_id: str, race_name: str, deadline: str, path: Path) -> None:
+    """
+    AI予測なしの出走表のみページを生成するフォールバック。
+    """
+    from src.line.page_generator import _html_doc, PAGES_BASE_URL
+    import html as html_mod
+
+    netkeiba_url = f"https://race.netkeiba.com/race/shutuba.html?race_id={race_id}"
+    deadline_html = f'<p class="deadline">⏰ 締め切り {html_mod.escape(deadline)}</p>' if deadline else ""
+
+    body = f"""
+<div class="header">
+  <p class="race-name">{html_mod.escape(race_name)}</p>
+  {deadline_html}
+</div>
+<div class="card" style="text-align:center; padding:20px">
+  <p style="font-size:28px; margin-bottom:10px">🏇</p>
+  <p style="font-weight:bold; margin-bottom:6px">AI予想を準備中</p>
+  <p style="color:#8b949e; font-size:13px; margin-bottom:16px">
+    出走表・オッズはnetkeibaでご確認ください
+  </p>
+  <a href="{html_mod.escape(netkeiba_url)}" class="netkeiba-btn" target="_blank">
+    netkeiba で出走表を見る
+  </a>
+</div>
+"""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(_html_doc(f"AI予想 - {race_name}", body, active_page="today"), encoding="utf-8")
 
 
 def send_test_notification() -> None:
