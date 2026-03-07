@@ -34,7 +34,11 @@ dependencies = [
     "pydantic>=2.6.0",
     "pydantic-settings>=2.2.0",
 
-    # ユーティリティ
+    # Web サーバー（Webhook）
+    "flask>=3.0.0",
+
+    # 画像生成
+    "Pillow>=10.0.0",
     "matplotlib>=3.8.0",
     "joblib>=1.3.0",
     "tenacity>=8.2.3",     # リトライ
