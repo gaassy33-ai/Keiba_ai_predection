@@ -130,10 +130,33 @@ def delete_all() -> None:
 # リッチメニュー画像生成（Pillow）
 # ---------------------------------------------------------------------------
 
+def _find_font(size: int):
+    """日本語対応フォントを検索して返す。見つからなければ None。"""
+    from PIL import ImageFont
+
+    candidates = [
+        # Ubuntu (GitHub Actions / Railway)
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+        # macOS
+        "/System/Library/Fonts/ヒラギノ角ゴシック W6.ttc",
+        "/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc",
+        "/Library/Fonts/Arial Unicode.ttf",
+    ]
+    for path in candidates:
+        try:
+            return ImageFont.truetype(path, size)
+        except (IOError, OSError):
+            continue
+    return None
+
+
 def generate_image(output_path: Path) -> None:
     """
-    5ボタンのリッチメニュー画像を Pillow で生成する。
-    日本語フォントが見つからない場合は ASCII フォールバック。
+    4ボタンのリッチメニュー画像を Pillow で生成する（2500×1686px）。
+    各セルに大きなアイコン文字とラベルを描画する。
     """
     from PIL import Image, ImageDraw, ImageFont
 
@@ -141,43 +164,52 @@ def generate_image(output_path: Path) -> None:
     img  = Image.new("RGB", (W, H), "#0D1B2A")
     draw = ImageDraw.Draw(img)
 
-    # セル定義: (x, y, w, h, emoji, label_ja, bg_color)
+    # セル定義: (x, y, w, h, icon_text, label, sub_label, bg_color)
     cells = [
-        (0,    0,   1250, 843,  "🏇", "今日のメインレース", "#C62828"),
-        (1250, 0,   1250, 843,  "📅", "開催スケジュール",   "#1565C0"),
-        (0,    843, 1250, 843,  "📊", "今日の成績",         "#2E7D32"),
-        (1250, 843, 1250, 843,  "🐦", "お問い合わせ / SNS", "#880E4F"),
+        (0,    0,   1250, 843,  "AI",   "今日の",       "メインレース", "#B71C1C"),
+        (1250, 0,   1250, 843,  "CAL",  "開催",         "スケジュール", "#0D47A1"),
+        (0,    843, 1250, 843,  "STAT", "今日の",       "成績",         "#1B5E20"),
+        (1250, 843, 1250, 843,  "SNS",  "お問い合わせ", "/ SNS",        "#4A148C"),
     ]
 
-    # フォント（日本語対応フォントを試みる）
-    font_paths = [
-        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-        "/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc",
-        "/System/Library/Fonts/Hiragino Sans GB.ttc",
-    ]
-    label_font = None
-    for fp in font_paths:
-        try:
-            label_font = ImageFont.truetype(fp, 80)
-            break
-        except (IOError, OSError):
-            continue
-    if label_font is None:
-        label_font = ImageFont.load_default()
+    # フォントサイズを複数試みる（2500px 画像なので最低 100px 必要）
+    font_xl  = _find_font(160)  # アイコン文字
+    font_lg  = _find_font(110)  # メインラベル
+    font_md  = _find_font(80)   # サブラベル
 
-    gap = 6
-    for x, y, w, h, emoji, label, color in cells:
-        # 背景
+    # フォントが全く見つからない場合は load_default（極小）でフォールバック
+    fallback = ImageFont.load_default(size=100) if hasattr(ImageFont, "load_default") else ImageFont.load_default()
+    if font_xl is None: font_xl = fallback
+    if font_lg is None: font_lg = fallback
+    if font_md is None: font_md = fallback
+
+    gap = 8
+    for x, y, w, h, icon, label, sub, color in cells:
+        cx = x + w // 2
+        cy = y + h // 2
+
+        # セル背景
         draw.rectangle([x+gap, y+gap, x+w-gap, y+h-gap], fill=color)
-        # 上部: emoji
-        draw.text((x + w // 2, y + h // 2 - 100), emoji,
-                  anchor="mm", fill="#ffffff", font=ImageFont.load_default())
-        # 下部: ラベル
-        draw.text((x + w // 2, y + h // 2 + 60), label,
-                  anchor="mm", fill="#ffffff", font=label_font)
+
+        # アイコン文字（上部）
+        draw.text((cx, cy - 180), icon,
+                  anchor="mm", fill="rgba(255,255,255,60)", font=font_xl)
+
+        # メインラベル（中央）
+        draw.text((cx, cy + 20), label,
+                  anchor="mm", fill="#ffffff", font=font_lg)
+
+        # サブラベル（下部）
+        draw.text((cx, cy + 150), sub,
+                  anchor="mm", fill="rgba(255,255,255,200)", font=font_md)
+
         # 枠線
         draw.rectangle([x+gap, y+gap, x+w-gap, y+h-gap],
-                       outline="#ffffff", width=4)
+                       outline="rgba(255,255,255,80)", width=6)
+
+        # 中央分割線（視認性向上）
+        draw.line([x+gap, y+h//2+gap, x+w-gap, y+h//2+gap],
+                  fill="rgba(255,255,255,20)", width=2)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     img.save(output_path, "PNG")
