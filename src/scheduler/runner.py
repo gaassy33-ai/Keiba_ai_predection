@@ -240,19 +240,33 @@ def run_morning_pages() -> None:
     # ── STEP 1: レーススケジュール取得 ────────────────────────────────
     try:
         fetcher = RaceScheduleFetcher()
-        races = fetcher.fetch_race_list(date.today())
-        races = fetcher.filter_by_jyo(races)
+        all_races = fetcher.fetch_race_list(date.today())
+        logger.info(f"全レース数: {len(all_races)}")
+        for r in all_races:
+            logger.info(f"  race_id={r['race_id']} jyo={r.get('jyo_name')} R{r.get('race_number')} {r.get('race_name')}")
+
+        races = fetcher.filter_by_jyo(all_races)
+        logger.info(f"filter_by_jyo 後: {len(races)} 件 (target_jyo_codes={settings.target_jyo_codes})")
+
         if not races:
-            logger.info("本日の対象レースなし。ページ生成をスキップします。")
+            # フィルタで全て除外された場合は全レースを対象にする
+            logger.warning("対象競馬場コードに一致するレースなし → 全レースを対象に切り替えます")
+            races = all_races
+
+        if not races:
+            logger.info("本日レースなし。")
+            _generate_no_race_page(Path("docs/today.html"))
             return
+
         main_race  = select_main_race(races)
         race_id    = main_race["race_id"]
         race_name  = main_race.get("race_name", race_id)
         start_time = main_race.get("start_time")
         deadline   = start_time.strftime("%H:%M") if start_time else ""
-        logger.info(f"Morning pages: {race_name} ({race_id})")
+        logger.info(f"メインレース決定: {race_name} ({race_id})")
     except Exception as e:
         logger.error(f"レーススケジュール取得失敗: {e}")
+        _generate_no_race_page(Path("docs/today.html"))
         return
 
     # ── STEP 2: 完全予測パイプライン ──────────────────────────────────
@@ -329,6 +343,23 @@ def run_morning_pages() -> None:
             logger.info("Morning pages generated with entries only (fallback).")
         except Exception as e2:
             logger.error(f"フォールバックページ生成も失敗: {e2}")
+
+
+def _generate_no_race_page(path: Path) -> None:
+    """本日レースなし / スケジュール取得失敗時のフォールバックページ。"""
+    from src.line.page_generator import _html_doc
+    body = """
+<div class="card" style="text-align:center; padding:30px 20px">
+  <p style="font-size:32px; margin-bottom:12px">🏇</p>
+  <p style="font-weight:bold; margin-bottom:8px">本日の予想</p>
+  <p style="color:#8b949e; font-size:14px">
+    本日のレーススケジュールを取得中です。<br>
+    しばらくしてから再度お試しください。
+  </p>
+</div>
+"""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(_html_doc("AI予想", body, active_page="today"), encoding="utf-8")
 
 
 def _generate_entries_page(race_id: str, race_name: str, deadline: str, path: Path) -> None:
