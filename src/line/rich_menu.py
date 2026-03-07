@@ -69,7 +69,7 @@ RICH_MENU_DEF: dict = {
             "action": {
                 "type": "uri",
                 "label": "お問い合わせ/SNS",
-                "uri": "https://twitter.com/YOUR_ACCOUNT",  # ← 変更してください
+                "uri": "https://x.com/ataru_keiba_ai",
             },
         },
     ],
