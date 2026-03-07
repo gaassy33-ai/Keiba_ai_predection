@@ -5,14 +5,14 @@ LINE リッチメニュー セットアップスクリプト。
     python -m src.line.rich_menu setup   # 作成・画像アップロード・デフォルト設定
     python -m src.line.rich_menu delete  # 既存メニューを全削除
 
-レイアウト (2500 × 1686 px):
+レイアウト (2500 × 843 px コンパクト):
     ┌─────────────────┬─────────────────┐  ← y=0
-    │   1250×843      │   1250×843      │
+    │   1250×421      │   1250×421      │
     │ ① メインレース  │ ② スケジュール  │
-    ├─────────────────┼─────────────────┤  ← y=843
-    │   1250×843      │   1250×843      │
+    ├─────────────────┼─────────────────┤  ← y=421
+    │   1250×422      │   1250×422      │
     │ ③ 今日の成績    │ ④ SNS          │
-    └─────────────────┴─────────────────┘  ← y=1686
+    └─────────────────┴─────────────────┘  ← y=843
 """
 
 from __future__ import annotations
@@ -31,14 +31,14 @@ from config.settings import settings
 # ---------------------------------------------------------------------------
 
 RICH_MENU_DEF: dict = {
-    "size": {"width": 2500, "height": 1686},
+    "size": {"width": 2500, "height": 843},   # コンパクトサイズ
     "selected": True,
     "name": "競馬予想メニュー",
     "chatBarText": "🏇 メニューを開く",
     "areas": [
         # ① 今日のメインレース（左上）
         {
-            "bounds": {"x": 0, "y": 0, "width": 1250, "height": 843},
+            "bounds": {"x": 0, "y": 0, "width": 1250, "height": 421},
             "action": {
                 "type": "message",
                 "label": "今日のメインレース",
@@ -47,7 +47,7 @@ RICH_MENU_DEF: dict = {
         },
         # ② 開催スケジュール（右上 / URL）
         {
-            "bounds": {"x": 1250, "y": 0, "width": 1250, "height": 843},
+            "bounds": {"x": 1250, "y": 0, "width": 1250, "height": 421},
             "action": {
                 "type": "uri",
                 "label": "開催スケジュール",
@@ -56,7 +56,7 @@ RICH_MENU_DEF: dict = {
         },
         # ③ 今日の成績（左下）
         {
-            "bounds": {"x": 0, "y": 843, "width": 1250, "height": 843},
+            "bounds": {"x": 0, "y": 421, "width": 1250, "height": 422},
             "action": {
                 "type": "message",
                 "label": "今日の成績",
@@ -65,7 +65,7 @@ RICH_MENU_DEF: dict = {
         },
         # ④ お問い合わせ/SNS（右下 / URL）
         {
-            "bounds": {"x": 1250, "y": 843, "width": 1250, "height": 843},
+            "bounds": {"x": 1250, "y": 421, "width": 1250, "height": 422},
             "action": {
                 "type": "uri",
                 "label": "お問い合わせ/SNS",
@@ -155,61 +155,48 @@ def _find_font(size: int):
 
 def generate_image(output_path: Path) -> None:
     """
-    4ボタンのリッチメニュー画像を Pillow で生成する（2500×1686px）。
-    各セルに大きなアイコン文字とラベルを描画する。
+    4ボタンのリッチメニュー画像を Pillow で生成する（2500×843px コンパクト）。
+    各セルにラベルのみを描画する。
     """
     from PIL import Image, ImageDraw, ImageFont
 
-    W, H = 2500, 1686
+    W, H = 2500, 843
     img  = Image.new("RGB", (W, H), "#0D1B2A")
     draw = ImageDraw.Draw(img)
 
-    # セル定義: (x, y, w, h, icon_text, label, sub_label, bg_color)
+    # セル定義: (x, y, w, h, label, sub_label, bg_color)
     cells = [
-        (0,    0,   1250, 843,  "AI",   "今日の",       "メインレース", "#B71C1C"),
-        (1250, 0,   1250, 843,  "CAL",  "開催",         "スケジュール", "#0D47A1"),
-        (0,    843, 1250, 843,  "STAT", "今日の",       "成績",         "#1B5E20"),
-        (1250, 843, 1250, 843,  "SNS",  "お問い合わせ", "/ SNS",        "#4A148C"),
+        (0,    0,   1250, 421,  "今日のメインレース", "AI予想 & 推奨買い目",   "#B71C1C"),
+        (1250, 0,   1250, 421,  "開催スケジュール",   "netkeiba へ移動",       "#0D47A1"),
+        (0,    421, 1250, 422,  "今日の成績",         "的中率 & 収支グラフ",   "#1B5E20"),
+        (1250, 421, 1250, 422,  "お問い合わせ / SNS", "X (Twitter) へ移動",   "#4A148C"),
     ]
 
-    # フォントサイズを複数試みる（2500px 画像なので最低 100px 必要）
-    font_xl  = _find_font(160)  # アイコン文字
-    font_lg  = _find_font(110)  # メインラベル
-    font_md  = _find_font(80)   # サブラベル
-
-    # フォントが全く見つからない場合は load_default（極小）でフォールバック
-    fallback = ImageFont.load_default(size=100) if hasattr(ImageFont, "load_default") else ImageFont.load_default()
-    if font_xl is None: font_xl = fallback
+    font_lg = _find_font(90)   # メインラベル
+    font_sm = _find_font(55)   # サブラベル
+    fallback = ImageFont.load_default()
     if font_lg is None: font_lg = fallback
-    if font_md is None: font_md = fallback
+    if font_sm is None: font_sm = fallback
 
-    gap = 8
-    for x, y, w, h, icon, label, sub, color in cells:
+    gap = 6
+    for x, y, w, h, label, sub, color in cells:
         cx = x + w // 2
         cy = y + h // 2
 
         # セル背景
         draw.rectangle([x+gap, y+gap, x+w-gap, y+h-gap], fill=color)
 
-        # アイコン文字（上部）
-        draw.text((cx, cy - 180), icon,
-                  anchor="mm", fill="rgba(255,255,255,60)", font=font_xl)
-
-        # メインラベル（中央）
-        draw.text((cx, cy + 20), label,
+        # メインラベル（中央より少し上）
+        draw.text((cx, cy - 30), label,
                   anchor="mm", fill="#ffffff", font=font_lg)
 
-        # サブラベル（下部）
-        draw.text((cx, cy + 150), sub,
-                  anchor="mm", fill="rgba(255,255,255,200)", font=font_md)
+        # サブラベル（中央より少し下）
+        draw.text((cx, cy + 55), sub,
+                  anchor="mm", fill="rgba(255,255,255,180)", font=font_sm)
 
         # 枠線
         draw.rectangle([x+gap, y+gap, x+w-gap, y+h-gap],
-                       outline="rgba(255,255,255,80)", width=6)
-
-        # 中央分割線（視認性向上）
-        draw.line([x+gap, y+h//2+gap, x+w-gap, y+h//2+gap],
-                  fill="rgba(255,255,255,20)", width=2)
+                       outline="rgba(255,255,255,60)", width=5)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     img.save(output_path, "PNG")
