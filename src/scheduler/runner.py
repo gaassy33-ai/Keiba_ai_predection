@@ -224,6 +224,92 @@ def run_once_for_date(target_date: date) -> None:
             run_pipeline_for_race(race)
 
 
+def run_morning_pages() -> None:
+    """
+    朝7時に当日メインレース（最大R番号）の予想ページを生成する。
+    LINE通知は行わない。
+    """
+    import pandas as pd
+    from src.line.notifier import _result_to_race_data
+    from src.line.page_generator import generate_prediction_page, generate_results_page
+    from src.betting.strategy import generate_betting_strategies
+
+    fetcher = RaceScheduleFetcher()
+    races = fetcher.fetch_race_list(date.today())
+    races = fetcher.filter_by_jyo(races)
+
+    if not races:
+        logger.info("本日の対象レースなし。ページ生成をスキップします。")
+        return
+
+    main_race = max(races, key=lambda r: int(r.get("race_number", 0)))
+    race_id   = main_race["race_id"]
+    race_name = main_race.get("race_name", race_id)
+    logger.info(f"Morning pages: {race_name} ({race_id})")
+
+    # 天候
+    weather_fetcher = WeatherFetcher()
+    weather_info = weather_fetcher.fetch(race_id)
+
+    # 出走表 + 血統
+    with NetkeibaScraper() as scraper:
+        race_info = scraper.fetch_today_entries(race_id)
+        pedigree_map: dict[str, dict] = {}
+        for entry in race_info.entries:
+            if entry.horse_id:
+                pedigree_map[entry.horse_id] = scraper.fetch_horse_pedigree(entry.horse_id)
+
+    entry_records = []
+    for e in race_info.entries:
+        ped = pedigree_map.get(e.horse_id, {})
+        entry_records.append({
+            "horse_id":       e.horse_id,
+            "horse_name":     e.horse_name,
+            "horse_number":   e.horse_number,
+            "frame_number":   e.frame_number,
+            "sex":            e.sex,
+            "age":            e.age,
+            "weight_carried": e.weight_carried,
+            "jockey_id":      e.jockey_id,
+            "jockey_name":    e.jockey_name,
+            "father":         ped.get("father", ""),
+            "mother_father":  ped.get("mother_father", ""),
+        })
+    entry_df = pd.DataFrame(entry_records)
+
+    fe = FeatureEngineer(pd.DataFrame())
+    feature_df = fe.build_entry_features(
+        entry_df=entry_df,
+        course_type=race_info.course_type,
+        distance=race_info.distance,
+        ground_condition_code=weather_info["ground_condition_code"],
+        weather_code=weather_info["weather_code"],
+    )
+
+    predictor = RacePredictor.from_saved_model()
+    result    = predictor.predict(race_id, race_name, feature_df)
+
+    trainer   = ModelTrainer.load()
+    explainer = PredictionExplainer(trainer)
+    shap_text = explainer.explain_text(result, feature_df) if settings.enable_shap else ""
+
+    race_data = _result_to_race_data(
+        result=result,
+        shap_text=shap_text,
+        ground_condition=weather_info["ground_condition"],
+        weather=weather_info["weather"],
+    )
+    top_horses = [h for h in [result.honmei, result.taikou, result.ana] if h]
+    for h in top_horses:
+        h.setdefault("win_odds", None)
+    race_data["strategies"] = generate_betting_strategies(top_horses)
+    race_data["budget"] = 10_000
+
+    generate_prediction_page(race_data, Path("docs/today.html"))
+    generate_results_page(date.today(), Path("docs/results.html"))
+    logger.info("Morning pages generated.")
+
+
 def send_test_notification() -> None:
     """LINE 接続確認用のテスト通知を送る。"""
     notifier = LineNotifier()
@@ -249,11 +335,21 @@ def main() -> None:
         action="store_true",
         help="LINE 接続確認用のテスト通知を送って終了",
     )
+    parser.add_argument(
+        "--morning",
+        action="store_true",
+        help="朝7時モード: 当日メインレースの予想ページを生成して終了（LINE通知なし）",
+    )
     args = parser.parse_args()
 
     if args.test:
         logger.info("Sending test LINE notification...")
         send_test_notification()
+        return
+
+    if args.morning:
+        logger.info("Running in --morning mode")
+        run_morning_pages()
         return
 
     if args.once:
