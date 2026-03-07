@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>今日の成績</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', sans-serif;
+    background: #0d1117; color: #e6edf3;
+    max-width: 480px; margin: 0 auto; padding: 12px;
+}
+.nav { display: flex; gap: 8px; margin-bottom: 14px; }
+.nav a {
+    flex: 1; text-align: center; padding: 10px;
+    background: #21262d; border-radius: 8px;
+    color: #8b949e; text-decoration: none; font-size: 13px;
+}
+.nav a.active { background: #1a237e; color: #fff; font-weight: bold; }
+.card { background: #161b22; border-radius: 10px; padding: 20px; text-align: center; }
+</style>
+</head>
+<body>
+<nav class="nav">
+  <a href="today.html">AI予想</a>
+  <a href="results.html" class="active">今日の成績</a>
+</nav>
+<div class="card">
+  <p style="font-size:32px; margin-bottom:12px">📊</p>
+  <p style="font-weight:bold; margin-bottom:8px">成績データ準備中</p>
+  <p style="color:#8b949e; font-size:14px">
+    土日のレース後に自動更新されます。<br>
+    しばらくお待ちください。
+  </p>
+</div>
+</body>
+</html>

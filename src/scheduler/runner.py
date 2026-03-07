@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import sys
 from datetime import date, datetime, timedelta
+from pathlib import Path
 
 import schedule
 import time
@@ -132,6 +133,30 @@ def run_pipeline_for_race(race: dict) -> None:
             ground_condition=weather_info["ground_condition"],
             weather=weather_info["weather"],
         )
+
+        # 9. GitHub Pages HTML 更新
+        try:
+            from src.line.notifier import _result_to_race_data
+            from src.line.page_generator import generate_prediction_page, generate_results_page
+            from src.betting.strategy import generate_betting_strategies
+
+            race_data = _result_to_race_data(
+                result=result,
+                shap_text=shap_text,
+                ground_condition=weather_info["ground_condition"],
+                weather=weather_info["weather"],
+            )
+            top_horses = [h for h in [result.honmei, result.taikou, result.ana] if h]
+            for h in top_horses:
+                h.setdefault("win_odds", None)
+            race_data["strategies"] = generate_betting_strategies(top_horses)
+            race_data["budget"] = 10_000
+
+            generate_prediction_page(race_data, Path("docs/today.html"))
+            generate_results_page(date.today(), Path("docs/results.html"))
+            logger.info("GitHub Pages updated.")
+        except Exception as e:
+            logger.warning(f"Page generation skipped: {e}")
 
         _notified_race_ids.add(race_id)
 

@@ -40,9 +40,9 @@ RICH_MENU_DEF: dict = {
         {
             "bounds": {"x": 0, "y": 0, "width": 1250, "height": 421},
             "action": {
-                "type": "message",
+                "type": "uri",
                 "label": "今日のメインレース",
-                "text": "main_race",
+                "uri": "https://gaassy33-ai.github.io/Keiba_ai_predection/today.html",
             },
         },
         # ② 開催スケジュール（右上 / URL）
@@ -58,9 +58,9 @@ RICH_MENU_DEF: dict = {
         {
             "bounds": {"x": 0, "y": 421, "width": 1250, "height": 422},
             "action": {
-                "type": "message",
+                "type": "uri",
                 "label": "今日の成績",
-                "text": "today_result",
+                "uri": "https://gaassy33-ai.github.io/Keiba_ai_predection/results.html",
             },
         },
         # ④ お問い合わせ/SNS（右下 / URL）
