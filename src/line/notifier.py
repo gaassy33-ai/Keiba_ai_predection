@@ -137,34 +137,6 @@ def _horse_card(horse: dict) -> dict:
     name = horse.get("horse_name", "---")
     jockey = horse.get("jockey_name", "")
     prob = horse.get("win_prob", 0.0)
-    tags: list[str] = horse.get("tags", [])
-
-    recent_avg_pos = horse.get("recent_avg_pos")
-
-    # 騎手当日成績
-    jockey_today = horse.get("jockey_today")  # {"races": int, "wins": int} | None | str
-    if jockey_today is None:
-        jockey_today_label = "---"
-    elif isinstance(jockey_today, str):
-        jockey_today_label = jockey_today
-    else:
-        races = jockey_today.get("races", 0)
-        wins  = jockey_today.get("wins", 0)
-        jockey_today_label = "本日初戦" if races == 0 else f"今日 {wins}勝/{races}走"
-
-    tag_badges = [
-        _tag_badge(t, _TAG_PALETTES[i % len(_TAG_PALETTES)])
-        for i, t in enumerate(tags[:4])
-    ]
-
-    # --- 騎手行 ---
-    jockey_label = f"騎手：{jockey}" if jockey else "騎手：---"
-
-    # --- 成績行: 直近着順 ---
-    avg_pos_label = (
-        f"直近 平均{float(recent_avg_pos):.1f}着"
-        if _valid(recent_avg_pos) else "直近 ---"
-    )
 
     return {
         "type": "box",
@@ -173,7 +145,7 @@ def _horse_card(horse: dict) -> dict:
         "cornerRadius": "lg",
         "paddingAll": "md",
         "contents": [
-            # --- 上段: 印 / 馬番 / 馬名 / 勝率 ---
+            # --- 枠番 / 馬番 / 馬名 / 的中率 ---
             {
                 "type": "box",
                 "layout": "horizontal",
@@ -231,52 +203,14 @@ def _horse_card(horse: dict) -> dict:
                     },
                 ],
             },
-            # --- 騎手名 + 当日成績 ---
-            {
-                "type": "box",
-                "layout": "horizontal",
-                "margin": "xs",
-                "contents": [
-                    {
-                        "type": "text",
-                        "text": jockey_label,
-                        "size": "xs",
-                        "color": "#555555",
-                        "flex": 1,
-                    },
-                    {
-                        "type": "text",
-                        "text": jockey_today_label,
-                        "size": "xs",
-                        "color": "#E65100",
-                        "weight": "bold",
-                        "align": "end",
-                    },
-                ],
-            },
-            # --- 直近成績 ---
+            # --- 騎手名 ---
             {
                 "type": "text",
-                "text": avg_pos_label,
+                "text": f"騎手：{jockey}" if jockey else "騎手：---",
                 "size": "xs",
                 "color": "#555555",
                 "margin": "xs",
             },
-            # --- タグ行 ---
-            *(
-                [
-                    {
-                        "type": "box",
-                        "layout": "horizontal",
-                        "spacing": "sm",
-                        "margin": "sm",
-                        "flexWrap": "wrap",
-                        "contents": tag_badges,
-                    }
-                ]
-                if tag_badges
-                else []
-            ),
         ],
     }
 
