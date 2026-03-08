@@ -73,7 +73,7 @@ class RacePredictor:
 
         base_cols = ["horse_id", "horse_name", "horse_number", "frame_number"]
         extra_cols = [
-            "jockey_name", "jockey_win_rate", "jockey_place_rate",
+            "jockey_id", "jockey_name",
             "recent_avg_pos", "recent_avg_last3f",
         ]
         cols = base_cols + [c for c in extra_cols if c in feature_df.columns]

@@ -127,28 +127,39 @@ def _horse_card(horse: dict) -> dict:
     mark = horse.get("mark", "◎")
     style = _MARK_STYLES.get(mark, _MARK_STYLES["◎"])
     num = str(horse.get("horse_number", "-"))
-    frame = horse.get("frame_number", "")
-    frame_label = str(int(frame)) if frame and str(frame).isdigit() else str(frame) if frame else "-"
+    # frame_number: 0 は未取得扱い（枠番は 1-8）
+    frame_raw = horse.get("frame_number", "")
+    try:
+        frame_int = int(frame_raw)
+        frame_label = str(frame_int) if frame_int > 0 else "-"
+    except (TypeError, ValueError):
+        frame_label = str(frame_raw) if frame_raw else "-"
     name = horse.get("horse_name", "---")
     jockey = horse.get("jockey_name", "")
     prob = horse.get("win_prob", 0.0)
     tags: list[str] = horse.get("tags", [])
 
-    jockey_place_rate = horse.get("jockey_place_rate")
     recent_avg_pos    = horse.get("recent_avg_pos")
     recent_avg_last3f = horse.get("recent_avg_last3f")
+
+    # 騎手当日成績
+    jockey_today = horse.get("jockey_today")  # {"races": int, "wins": int} | None | str
+    if jockey_today is None:
+        jockey_today_label = "---"
+    elif isinstance(jockey_today, str):
+        jockey_today_label = jockey_today
+    else:
+        races = jockey_today.get("races", 0)
+        wins  = jockey_today.get("wins", 0)
+        jockey_today_label = "本日初戦" if races == 0 else f"今日 {wins}勝/{races}走"
 
     tag_badges = [
         _tag_badge(t, _TAG_PALETTES[i % len(_TAG_PALETTES)])
         for i, t in enumerate(tags[:4])
     ]
 
-    # --- 騎手行: 名前 + 連対率 ---
+    # --- 騎手行 ---
     jockey_label = f"騎手：{jockey}" if jockey else "騎手：---"
-    place_rate_label = (
-        f"連対率 {float(jockey_place_rate):.0%}"
-        if _valid(jockey_place_rate) else "連対率 ---"
-    )
 
     # --- 成績行: 直近着順 + 上がり3F ---
     avg_pos_label = (
@@ -225,7 +236,7 @@ def _horse_card(horse: dict) -> dict:
                     },
                 ],
             },
-            # --- 騎手名 + 連対率 ---
+            # --- 騎手名 + 当日成績 ---
             {
                 "type": "box",
                 "layout": "horizontal",
@@ -240,9 +251,9 @@ def _horse_card(horse: dict) -> dict:
                     },
                     {
                         "type": "text",
-                        "text": place_rate_label,
+                        "text": jockey_today_label,
                         "size": "xs",
-                        "color": "#1565C0",
+                        "color": "#E65100",
                         "weight": "bold",
                         "align": "end",
                     },
@@ -665,7 +676,7 @@ def _result_to_race_data(
                 "horse_number":      horse.get("horse_number", "-"),
                 "horse_name":        horse.get("horse_name", "---"),
                 "jockey_name":       horse.get("jockey_name", ""),
-                "jockey_place_rate": horse.get("jockey_place_rate"),
+                "jockey_today":      horse.get("jockey_today"),
                 "recent_avg_pos":    horse.get("recent_avg_pos"),
                 "recent_avg_last3f": horse.get("recent_avg_last3f"),
                 "win_prob":          horse.get("win_prob", 0.0),

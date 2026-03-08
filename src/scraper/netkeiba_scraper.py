@@ -500,6 +500,85 @@ class NetkeibaScraper:
             "recent_avg_last3f": float(_np.mean(last3fs)) if last3fs else float("nan"),
         }
 
+    def fetch_jockey_today_results(self, jockey_id: str, target_date=None) -> dict:
+        """
+        騎手の当日成績（本日レース分）を取得する。
+
+        Returns
+        -------
+        dict
+            {"races": int, "wins": int}
+            データ取得失敗時は None を返す。
+        """
+        from datetime import date as _date
+        if target_date is None:
+            target_date = _date.today()
+
+        url = f"{self.BASE_URL}/jockey/result/recent/{jockey_id}/"
+        logger.debug(f"Fetching jockey today results: {url}")
+        try:
+            soup = self._get(url)
+        except Exception as e:
+            logger.warning(f"Jockey today results fetch failed for {jockey_id}: {e}")
+            return None
+
+        table = soup.select_one("table.race_table_01, table.db_h_race_results")
+        if table is None:
+            return None
+
+        races = 0
+        wins = 0
+
+        for tr in table.select("tr")[1:]:
+            tds = tr.select("td")
+            if not tds:
+                continue
+            # 日付列（0番目）
+            date_text = tds[0].get_text(strip=True)
+            try:
+                from datetime import datetime as _dt
+                row_date = _dt.strptime(date_text, "%Y/%m/%d").date()
+            except ValueError:
+                try:
+                    row_date = _dt.strptime(date_text, "%Y年%m月%d日").date()
+                except ValueError:
+                    continue
+
+            if row_date != target_date:
+                if races > 0:
+                    # 日付が今日以前になったら終了
+                    break
+                continue
+
+            # 着順列を探す（ヘッダー検出またはインデックス推定）
+            # 典型的なjockey result tableは 着順が10-11列目あたり
+            pos_val = None
+            for idx in range(min(len(tds), 15), 4, -1):
+                try:
+                    v = int(tds[idx].get_text(strip=True))
+                    if 1 <= v <= 18:
+                        pos_val = v
+                        break
+                except (ValueError, IndexError):
+                    pass
+            if pos_val is None:
+                # フォールバック: 5番目以降で最初の1-18の数値
+                for td in tds[5:]:
+                    try:
+                        v = int(td.get_text(strip=True))
+                        if 1 <= v <= 18:
+                            pos_val = v
+                            break
+                    except (ValueError, TypeError):
+                        pass
+
+            if pos_val is not None:
+                races += 1
+                if pos_val == 1:
+                    wins += 1
+
+        return {"races": races, "wins": wins}
+
     def fetch_bulk_race_meta(self, race_ids: list[str]) -> pd.DataFrame:
         """
         race_id リストに対してレースメタ情報を一括取得する。
@@ -606,7 +685,8 @@ class NetkeibaScraper:
                 m = re.search(pattern, href)
                 return m.group(1) if m else ""
 
-            waku_span   = tr.select_one("td.Waku span")
+            waku_td     = tr.select_one("td.Waku")
+            waku_span   = waku_td.select_one("span") if waku_td else None
             umaban_td   = tr.select_one("td.Umaban")
             barei_td    = tr.select_one("td.Barei")
             futan_td    = tr.select_one("td.Futan")
@@ -616,11 +696,30 @@ class NetkeibaScraper:
             jockey_id  = _extract_id(jockey_link,  r'/jockey/(?:result/recent/)?(\d+)')
             trainer_id = _extract_id(trainer_link, r'/trainer/(?:result/recent/)?(\d+)')
 
+            # 枠番: span内 → td直接 → tds[0] の優先順でフォールバック
+            frame_source = waku_span or waku_td
+            if frame_source:
+                frame_text = re.sub(r'\D', '', frame_source.get_text(strip=True))
+            elif tds:
+                frame_text = re.sub(r'\D', '', tds[0].get_text(strip=True))
+            else:
+                frame_text = ""
+            frame_num = int(frame_text) if frame_text and frame_text.isdigit() else 0
+
+            # 馬番: td.Umaban → tds[1] の優先順でフォールバック
+            if umaban_td:
+                horse_text = re.sub(r'\D', '', umaban_td.get_text(strip=True))
+            elif len(tds) > 1:
+                horse_text = re.sub(r'\D', '', tds[1].get_text(strip=True))
+            else:
+                horse_text = ""
+            horse_num = int(horse_text) if horse_text and horse_text.isdigit() else 0
+
             entries.append(HorseRecord(
                 horse_id=horse_id,
                 horse_name=horse_link.get_text(strip=True) if horse_link else "",
-                frame_number=int(waku_span.get_text(strip=True) or 0) if waku_span else 0,
-                horse_number=int(umaban_td.get_text(strip=True) or 0) if umaban_td else 0,
+                frame_number=frame_num,
+                horse_number=horse_num,
                 sex=barei_text[0] if barei_text else "",
                 age=int(barei_text[1:] or 0) if len(barei_text) > 1 else 0,
                 weight_carried=float(futan_td.get_text(strip=True) or 0) if futan_td else 0.0,
