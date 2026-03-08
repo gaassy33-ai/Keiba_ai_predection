@@ -52,6 +52,7 @@ class Settings(BaseSettings):
     # モデル
     # ------------------------------------------------------------------
     model_path: Path = BASE_DIR / "data" / "models" / "lgbm_model.pkl"
+    stats_path: Path = BASE_DIR / "data" / "models" / "feature_stats.pkl"
     enable_shap: bool = True
 
     # ------------------------------------------------------------------

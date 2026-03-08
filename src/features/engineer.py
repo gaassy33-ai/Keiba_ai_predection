@@ -12,7 +12,9 @@
 
 from __future__ import annotations
 
+import pickle
 import re
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -217,7 +219,10 @@ class FeatureEngineer:
             jockey_filtered = self._jockey_course_stats[
                 (self._jockey_course_stats["course_type"] == course_type)
                 & (self._jockey_course_stats["distance_bin"] == distance_label)
-            ][["jockey_id", "jockey_win_rate", "jockey_place_rate", "jockey_runs"]]
+            ][["jockey_id", "jockey_win_rate", "jockey_place_rate", "jockey_runs"]].copy()
+            # jockey_id の型を統一してからマージ
+            df["jockey_id"] = df["jockey_id"].astype(str)
+            jockey_filtered["jockey_id"] = jockey_filtered["jockey_id"].astype(str)
             df = df.merge(jockey_filtered, on="jockey_id", how="left")
         else:
             df["jockey_win_rate"] = np.nan
@@ -451,7 +456,105 @@ class FeatureEngineer:
         logger.info(f"  → {len(history_df)} horse records, {len(race_meta_df)} races")
         logger.info("Step 2/2: Building training dataset with lookback features...")
         fe = cls(history_df)
-        return fe.build_training_dataset(race_meta_df, output_path=output_path)
+        fe.precompute_aggregations()
+        result = fe.build_training_dataset(race_meta_df, output_path=output_path)
+
+        # 推論用集計統計を保存
+        if output_path:
+            from config.settings import settings
+            fe.save_stats(settings.stats_path)
+
+        return result
+
+    # ------------------------------------------------------------------
+    # 統計データの保存・読み込み（推論時に使用）
+    # ------------------------------------------------------------------
+
+    def save_stats(self, path: Path | str) -> None:
+        """集計統計をファイルに保存する（学習後に呼び出す）。"""
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        stats = {
+            "sire_win_rate": self._sire_win_rate,
+            "bms_win_rate": self._bms_win_rate,
+            "jockey_course_stats": self._jockey_course_stats,
+        }
+        with open(path, "wb") as f:
+            pickle.dump(stats, f)
+        logger.info(f"Feature stats saved to {path}")
+
+    @classmethod
+    def from_stats(cls, path: Path | str) -> "FeatureEngineer":
+        """
+        保存済み統計から推論用 FeatureEngineer を生成する。
+        history_df の読み込み・集計処理が不要になる。
+        """
+        path = Path(path)
+        instance = cls(pd.DataFrame())  # history は空でOK
+        if not path.exists():
+            logger.warning(f"Stats file not found: {path}. Using empty stats.")
+            return instance
+        with open(path, "rb") as f:
+            stats = pickle.load(f)
+        instance._sire_win_rate = stats.get("sire_win_rate")
+        instance._bms_win_rate = stats.get("bms_win_rate")
+        instance._jockey_course_stats = stats.get("jockey_course_stats")
+        logger.info(f"Feature stats loaded from {path}")
+        return instance
+
+    @classmethod
+    def build_stats_from_training_csv(cls, csv_path: Path | str, stats_path: Path | str) -> "FeatureEngineer":
+        """
+        学習用CSVから集計統計を再構築して保存する。
+        学習済みCSV（train_2024.csv など）の父名・母父名・騎手IDから
+        推論用統計を生成する。
+        """
+        csv_path = Path(csv_path)
+        df = pd.read_csv(csv_path)
+        logger.info(f"Loaded training CSV: {len(df)} rows from {csv_path}")
+
+        instance = cls(pd.DataFrame())
+
+        # 父産駒勝率（最後に観測した値を使用）
+        if "father" in df.columns and "sire_win_rate" in df.columns:
+            instance._sire_win_rate = (
+                df[df["father"].notna() & (df["father"] != "")]
+                .groupby("father")["sire_win_rate"].mean()
+                .rename("sire_win_rate")
+            )
+            logger.info(f"sire_win_rate: {len(instance._sire_win_rate)} entries")
+
+        # 母父産駒勝率
+        if "mother_father" in df.columns and "bms_win_rate" in df.columns:
+            instance._bms_win_rate = (
+                df[df["mother_father"].notna() & (df["mother_father"] != "")]
+                .groupby("mother_father")["bms_win_rate"].mean()
+                .rename("bms_win_rate")
+            )
+            logger.info(f"bms_win_rate: {len(instance._bms_win_rate)} entries")
+
+        # 騎手コース適性
+        jockey_cols = ["jockey_id", "course_type_code", "distance_bin_code",
+                       "jockey_win_rate", "jockey_place_rate", "jockey_runs"]
+        if all(c in df.columns for c in jockey_cols):
+            course_map = {0: "芝", 1: "ダート"}
+            dist_map   = {0: "短距離", 1: "マイル", 2: "中距離", 3: "長距離"}
+            tmp = df[jockey_cols].copy().dropna()
+            tmp["course_type"]  = tmp["course_type_code"].map(course_map)
+            tmp["distance_bin"] = tmp["distance_bin_code"].astype(int).map(dist_map)
+            instance._jockey_course_stats = (
+                tmp.groupby(["jockey_id", "course_type", "distance_bin"])
+                .agg(
+                    jockey_win_rate=("jockey_win_rate", "mean"),
+                    jockey_place_rate=("jockey_place_rate", "mean"),
+                    jockey_runs=("jockey_runs", "mean"),
+                )
+                .reset_index()
+            )
+            logger.info(f"jockey_course_stats: {len(instance._jockey_course_stats)} entries")
+
+        instance.save_stats(stats_path)
+        return instance
 
     # ------------------------------------------------------------------
     # モデル入力カラム一覧

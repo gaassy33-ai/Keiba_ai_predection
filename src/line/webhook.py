@@ -154,8 +154,13 @@ def _handle_main_race(reply_token: str) -> None:
                 "horse_name":     e.horse_name,
                 "horse_number":   e.horse_number,
                 "frame_number":   e.frame_number,
+                "sex":            getattr(e, "sex", ""),
+                "age":            getattr(e, "age", 0),
+                "jockey_id":      getattr(e, "jockey_id", ""),
                 "jockey_name":    getattr(e, "jockey_name", ""),
                 "weight_carried": getattr(e, "weight_carried", 55),
+                "father":         "",
+                "mother_father":  "",
             }
             for e in race_info.entries
         ]
@@ -163,7 +168,8 @@ def _handle_main_race(reply_token: str) -> None:
 
         # ── 特徴量エンジニアリング ─────────────────────────────────────
         from src.features.engineer import FeatureEngineer
-        fe = FeatureEngineer(pd.DataFrame())
+        from config.settings import settings as _settings
+        fe = FeatureEngineer.from_stats(_settings.stats_path)
         feature_df = fe.build_entry_features(
             entry_df=entry_df,
             course_type=race_info.course_type,

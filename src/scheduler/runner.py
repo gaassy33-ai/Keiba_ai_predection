@@ -108,7 +108,7 @@ def run_pipeline_for_race(race: dict) -> None:
         # 5. 特徴量エンジニアリング
         # NOTE: 本番では事前にロードした history_df を渡す
         # ここでは空 DataFrame で初期化（初回実行時はモデルの特徴量のみ）
-        fe = FeatureEngineer(pd.DataFrame())
+        fe = FeatureEngineer.from_stats(settings.stats_path)
         feature_df = fe.build_entry_features(
             entry_df=entry_df,
             course_type=race_info.course_type,
@@ -301,7 +301,7 @@ def run_morning_pages() -> None:
             })
         entry_df = pd.DataFrame(entry_records)
 
-        fe = FeatureEngineer(pd.DataFrame())
+        fe = FeatureEngineer.from_stats(settings.stats_path)
         feature_df = fe.build_entry_features(
             entry_df=entry_df,
             course_type=race_info.course_type,

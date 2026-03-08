@@ -21,8 +21,9 @@ data/raw/
 data/processed/
 data/models/*.pkl
 data/models/*.bin
-# 学習済みモデルはリポジトリに含める
+# 学習済みモデル・統計はリポジトリに含める
 !data/models/lgbm_model.pkl
+!data/models/feature_stats.pkl
 
 # ログ
 logs/

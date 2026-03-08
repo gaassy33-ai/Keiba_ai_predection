@@ -505,27 +505,41 @@ class NetkeibaScraper:
                 (a for a in all_links if "/trainer/" in a.get("href", "")), None
             )
 
+            def _extract_id(link, pattern: str) -> str:
+                """href から正規表現で数値IDを抽出する。"""
+                if not link:
+                    return ""
+                href = link.get("href", "")
+                m = re.search(pattern, href)
+                return m.group(1) if m else ""
+
             waku_span   = tr.select_one("td.Waku span")
             umaban_td   = tr.select_one("td.Umaban")
             barei_td    = tr.select_one("td.Barei")
             futan_td    = tr.select_one("td.Futan")
             barei_text  = barei_td.get_text(strip=True) if barei_td else ""
 
+            horse_id   = _extract_id(horse_link,   r'/horse/(\d+)')
+            jockey_id  = _extract_id(jockey_link,  r'/jockey/(?:result/recent/)?(\d+)')
+            trainer_id = _extract_id(trainer_link, r'/trainer/(?:result/recent/)?(\d+)')
+
             entries.append(HorseRecord(
-                horse_id=horse_link["href"].split("/")[-2] if horse_link else "",
+                horse_id=horse_id,
                 horse_name=horse_link.get_text(strip=True) if horse_link else "",
                 frame_number=int(waku_span.get_text(strip=True) or 0) if waku_span else 0,
                 horse_number=int(umaban_td.get_text(strip=True) or 0) if umaban_td else 0,
                 sex=barei_text[0] if barei_text else "",
                 age=int(barei_text[1:] or 0) if len(barei_text) > 1 else 0,
                 weight_carried=float(futan_td.get_text(strip=True) or 0) if futan_td else 0.0,
-                jockey_id=jockey_link["href"].split("/")[-2] if jockey_link else "",
+                jockey_id=jockey_id,
                 jockey_name=jockey_link.get_text(strip=True) if jockey_link else "",
-                trainer_id=trainer_link["href"].split("/")[-2] if trainer_link else "",
+                trainer_id=trainer_id,
                 trainer_name=trainer_link.get_text(strip=True) if trainer_link else "",
             ))
 
         logger.info(f"出走馬 {len(entries)} 頭: {[e.horse_name for e in entries[:5]]}")
+        logger.info(f"horse_ids: {[e.horse_id for e in entries[:5]]}")
+        logger.info(f"jockey_ids: {[e.jockey_id for e in entries[:5]]}")
         return RaceInfo(
             race_id=race_id,
             race_name=race_name.get_text(strip=True) if race_name else "",
