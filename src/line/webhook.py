@@ -177,14 +177,15 @@ def _handle_main_race(reply_token: str) -> None:
 
         # ── 特徴量エンジニアリング ─────────────────────────────────────
         from src.features.engineer import FeatureEngineer
+        from src.scraper.weather import GROUND_CONDITION_MAP, WEATHER_MAP
         from config.settings import settings as _settings
         fe = FeatureEngineer.from_stats(_settings.stats_path)
         feature_df = fe.build_entry_features(
             entry_df=entry_df,
             course_type=race_info.course_type,
             distance=race_info.distance,
-            ground_condition_code=getattr(race_info, "ground_condition_code", "1"),
-            weather_code=getattr(race_info, "weather_code", "1"),
+            ground_condition_code=GROUND_CONDITION_MAP.get(race_info.ground_condition, -1),
+            weather_code=WEATHER_MAP.get(race_info.weather, -1),
         )
 
         # ── 予測 ───────────────────────────────────────────────────────
@@ -208,22 +209,23 @@ def _handle_main_race(reply_token: str) -> None:
         strategies = generate_betting_strategies(top_horses)
 
         # ── Flex Message 組み立て ──────────────────────────────────────
-        from src.line.notifier import create_prediction_message
+        from src.line.notifier import create_prediction_message, _shap_text_to_tags
+        marks = ["◎", "○", "▲"]
         race_data = {
             "race_name":        race_name,
             "race_id":          race_id,
             "course_type":      race_info.course_type,
             "distance":         race_info.distance,
-            "weather":          getattr(race_info, "weather", "不明"),
-            "ground_condition": getattr(race_info, "ground_condition", "不明"),
+            "weather":          race_info.weather or "不明",
+            "ground_condition": race_info.ground_condition or "不明",
             "deadline":         deadline,
             "horses": [
                 {
                     **h,
+                    "mark":        marks[i] if i < len(marks) else "▲",
                     "tags":        [],
-                    "jockey_name": h.get("jockey_name", ""),
                 }
-                for h in top_horses
+                for i, h in enumerate(top_horses)
             ],
             "strategies": strategies,
             "budget":     10_000,

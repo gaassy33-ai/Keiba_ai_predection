@@ -632,6 +632,9 @@ def _result_to_race_data(
     shap_text: str,
     ground_condition: str,
     weather: str,
+    course_type: str = "",
+    distance: int | str = "",
+    deadline: str = "",
 ) -> dict:
     """PredictionResult を create_prediction_message() 用の race_data に変換する。"""
     grade = _detect_grade(result.race_name)
@@ -656,26 +659,16 @@ def _result_to_race_data(
             }
         )
 
-    # 発走時刻から締め切り時刻を推定（発走の2分前）
-    start_time = getattr(result, "start_time", None)
-    if start_time:
-        from datetime import timedelta
-        deadline_dt = start_time - timedelta(minutes=2)
-        deadline = deadline_dt.strftime("%H:%M")
-    else:
-        deadline = ""
-
     return {
-        "race_name": result.race_name,
-        "grade": grade,
-        "race_id": getattr(result, "race_id", ""),
-        "venue": getattr(result, "venue", ""),
-        "course_type": getattr(result, "course_type", ""),
-        "distance": getattr(result, "distance", ""),
-        "weather": weather,
+        "race_name":        result.race_name,
+        "grade":            grade,
+        "race_id":          result.race_id,
+        "course_type":      course_type,
+        "distance":         distance,
+        "weather":          weather,
         "ground_condition": ground_condition,
-        "deadline": deadline,
-        "horses": horses,
+        "deadline":         deadline,
+        "horses":           horses,
     }
 
 
@@ -734,6 +727,9 @@ class LineNotifier:
         shap_text: str = "",
         ground_condition: str = "不明",
         weather: str = "不明",
+        course_type: str = "",
+        distance: int | str = "",
+        deadline: str = "",
     ) -> None:
         """
         PredictionResult から Flex Message を組み立てて送信する。
@@ -744,11 +740,20 @@ class LineNotifier:
         shap_text : str
             PredictionExplainer.explain_text() の出力
         ground_condition : str
-            馬場状態
+            馬場状態（例: "良"）
         weather : str
-            天候
+            天候（例: "晴"）
+        course_type : str
+            コース種別（例: "芝" / "ダート"）
+        distance : int | str
+            距離（例: 1600）
+        deadline : str
+            締め切り時刻（例: "15:20"）
         """
-        race_data = _result_to_race_data(result, shap_text, ground_condition, weather)
+        race_data = _result_to_race_data(
+            result, shap_text, ground_condition, weather,
+            course_type=course_type, distance=distance, deadline=deadline,
+        )
         self.send_flex(race_data)
 
     def send_text(self, text: str) -> None:

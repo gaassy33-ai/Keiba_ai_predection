@@ -20,7 +20,7 @@ from loguru import logger
 from config.settings import settings
 from src.scraper.netkeiba_scraper import NetkeibaScraper
 from src.scraper.race_schedule import RaceScheduleFetcher, select_main_race
-from src.scraper.weather import WeatherFetcher
+
 from src.features.engineer import FeatureEngineer
 from src.model.predictor import RacePredictor
 from src.model.explainer import PredictionExplainer
@@ -70,11 +70,7 @@ def run_pipeline_for_race(race: dict) -> None:
     notifier = LineNotifier()
 
     try:
-        # 1. 天候・馬場状態を取得
-        weather_fetcher = WeatherFetcher()
-        weather_info = weather_fetcher.fetch(race_id)
-
-        # 2. 当日出走表を取得
+        # 1. 当日出走表を取得（Selenium → course_type / distance / weather / ground_condition を含む）
         with NetkeibaScraper() as scraper:
             race_info = scraper.fetch_today_entries(race_id)
 
@@ -110,15 +106,17 @@ def run_pipeline_for_race(race: dict) -> None:
         entry_df = pd.DataFrame(entry_records)
 
         # 5. 特徴量エンジニアリング
-        # NOTE: 本番では事前にロードした history_df を渡す
-        # ここでは空 DataFrame で初期化（初回実行時はモデルの特徴量のみ）
+        from src.scraper.weather import GROUND_CONDITION_MAP, WEATHER_MAP
+        ground_condition_code = GROUND_CONDITION_MAP.get(race_info.ground_condition, -1)
+        weather_code          = WEATHER_MAP.get(race_info.weather, -1)
+
         fe = FeatureEngineer.from_stats(settings.stats_path)
         feature_df = fe.build_entry_features(
             entry_df=entry_df,
             course_type=race_info.course_type,
             distance=race_info.distance,
-            ground_condition_code=weather_info["ground_condition_code"],
-            weather_code=weather_info["weather_code"],
+            ground_condition_code=ground_condition_code,
+            weather_code=weather_code,
         )
 
         # 6. 推論
@@ -131,11 +129,18 @@ def run_pipeline_for_race(race: dict) -> None:
         shap_text = explainer.explain_text(result, feature_df) if settings.enable_shap else ""
 
         # 8. LINE 送信
+        from datetime import timedelta
+        start_time = race.get("start_time")
+        deadline = (start_time - timedelta(minutes=2)).strftime("%H:%M") if start_time else ""
+
         notifier.send_prediction(
             result=result,
             shap_text=shap_text,
-            ground_condition=weather_info["ground_condition"],
-            weather=weather_info["weather"],
+            course_type=race_info.course_type,
+            distance=race_info.distance,
+            ground_condition=race_info.ground_condition or "不明",
+            weather=race_info.weather or "不明",
+            deadline=deadline,
         )
 
         # 9. GitHub Pages HTML 更新
@@ -147,8 +152,11 @@ def run_pipeline_for_race(race: dict) -> None:
             race_data = _result_to_race_data(
                 result=result,
                 shap_text=shap_text,
-                ground_condition=weather_info["ground_condition"],
-                weather=weather_info["weather"],
+                course_type=race_info.course_type,
+                distance=race_info.distance,
+                ground_condition=race_info.ground_condition or "不明",
+                weather=race_info.weather or "不明",
+                deadline=deadline,
             )
             top_horses = [h for h in [result.honmei, result.taikou, result.ana] if h]
             for h in top_horses:
@@ -306,9 +314,6 @@ def run_morning_pages() -> None:
         from src.line.notifier import _result_to_race_data
         from src.betting.strategy import generate_betting_strategies
 
-        weather_fetcher = WeatherFetcher()
-        weather_info = weather_fetcher.fetch(race_id)
-
         with NetkeibaScraper() as scraper:
             race_info = scraper.fetch_today_entries(race_id)
             pedigree_map: dict[str, dict] = {}
@@ -339,13 +344,14 @@ def run_morning_pages() -> None:
             })
         entry_df = pd.DataFrame(entry_records)
 
+        from src.scraper.weather import GROUND_CONDITION_MAP, WEATHER_MAP
         fe = FeatureEngineer.from_stats(settings.stats_path)
         feature_df = fe.build_entry_features(
             entry_df=entry_df,
             course_type=race_info.course_type,
             distance=race_info.distance,
-            ground_condition_code=weather_info["ground_condition_code"],
-            weather_code=weather_info["weather_code"],
+            ground_condition_code=GROUND_CONDITION_MAP.get(race_info.ground_condition, -1),
+            weather_code=WEATHER_MAP.get(race_info.weather, -1),
         )
 
         predictor = RacePredictor.from_saved_model()
@@ -358,8 +364,11 @@ def run_morning_pages() -> None:
         race_data = _result_to_race_data(
             result=result,
             shap_text=shap_text,
-            ground_condition=weather_info["ground_condition"],
-            weather=weather_info["weather"],
+            course_type=race_info.course_type,
+            distance=race_info.distance,
+            ground_condition=race_info.ground_condition or "不明",
+            weather=race_info.weather or "不明",
+            deadline=deadline,
         )
         top_horses = [h for h in [result.honmei, result.taikou, result.ana] if h]
         for h in top_horses:
