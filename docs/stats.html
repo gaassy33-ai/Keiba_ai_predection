@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>AI成績・回収率 | 競馬予想AI</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", sans-serif;
+  background: #0d1117; color: #e6edf3;
+  max-width: 480px; margin: 0 auto; padding: 12px; font-size: 14px;
+}
+h1 { font-size: 18px; padding: 14px 0 4px; color: #fff; border-bottom: 2px solid #c62828; margin-bottom: 14px; }
+h2 { font-size: 13px; color: #8b949e; text-transform: uppercase; letter-spacing: .08em; margin: 18px 0 8px; }
+.card { background: #161b22; border-radius: 10px; padding: 14px; margin-bottom: 10px; }
+.kpi-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+.kpi { background: #161b22; border-radius: 10px; padding: 12px; text-align: center; }
+.kpi-label { font-size: 11px; color: #8b949e; margin-bottom: 4px; }
+.kpi-value { font-size: 22px; font-weight: bold; }
+.neutral { color: #64b5f6; }
+.empty { color: #484f58; font-size: 13px; text-align: center; padding: 20px; }
+.footer { color: #484f58; font-size: 11px; text-align: center; margin-top: 20px; padding-bottom: 20px; }
+</style>
+</head>
+<body>
+<h1>&#x1F3C7; AI成績・回収率</h1>
+<h2>全期間</h2>
+<div class="kpi-grid">
+  <div class="kpi"><div class="kpi-label">総レース数</div><div class="kpi-value neutral">--</div></div>
+  <div class="kpi"><div class="kpi-label">的中率</div><div class="kpi-value neutral">--%</div></div>
+  <div class="kpi"><div class="kpi-label">回収率</div><div class="kpi-value neutral">--%</div></div>
+  <div class="kpi"><div class="kpi-label">累計収支</div><div class="kpi-value neutral">--</div></div>
+</div>
+<h2>累計収支グラフ</h2>
+<div class="card">
+  <p class="empty">土日の朝バッチ実行後に実績データが表示されます。</p>
+</div>
+<h2>最近の予想</h2>
+<div class="card">
+  <p class="empty">まだデータがありません</p>
+</div>
+<p class="footer">更新: 2026/03/09 ／ AIの予想は参考情報です</p>
+</body>
+</html>

@@ -51,7 +51,7 @@ RICH_MENU_DEF: dict = {
             "action": {
                 "type": "uri",
                 "label": "AIの成績・回収率",
-                "uri": "https://liff.line.me/xxx-yyy",   # ← 本番 LIFF URL に差し替え
+                "uri": "https://gaassy33-ai.github.io/Keiba_ai_predection/stats.html",
             },
         },
         # ③ 開催スケジュール（左下）→ netkeiba トップ
@@ -69,7 +69,7 @@ RICH_MENU_DEF: dict = {
             "action": {
                 "type": "uri",
                 "label": "公式X",
-                "uri": "https://x.com/your_account",     # ← 本番 X URL に差し替え
+                "uri": "https://x.com/ataru_keiba_ai",
             },
         },
     ],
@@ -167,9 +167,9 @@ def generate_image(output_path: Path) -> None:
     # セル定義: (x, y, w, h, label, sub_label, bg_color)
     cells = [
         (0,    0,   1250, 421,  "今日の予想一覧",      "単勝・馬連 全レース",   "#B71C1C"),
-        (1250, 0,   1250, 421,  "AIの成績・回収率",    "的中率 & 収支グラフ",   "#1B5E20"),
+        (1250, 0,   1250, 421,  "AIの成績・回収率",    "的中率・収支グラフ",    "#1B5E20"),
         (0,    421, 1250, 422,  "開催スケジュール",    "netkeiba へ移動",       "#0D47A1"),
-        (1250, 421, 1250, 422,  "公式X",               "X (Twitter) へ移動",   "#4A148C"),
+        (1250, 421, 1250, 422,  "公式X",               "@ataru_keiba_ai",      "#4A148C"),
     ]
 
     font_lg = _find_font(90)   # メインラベル
