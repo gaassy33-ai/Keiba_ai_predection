@@ -232,12 +232,9 @@ def main() -> None:
             sys.exit(0)   # exit 0 = GitHub Actions では緑チェック（正常終了）
 
     if args.morning:
-        logger.info("朝バッチ開始（予想ページ生成）")
-        from src.scheduler.runner import run_morning_pages, export_race_schedule
-        run_morning_pages()
-        # CF Worker 用にスケジュール JSON を GitHub Pages に書き出す
-        logger.info("レーススケジュール JSON エクスポート開始")
-        export_race_schedule(date.today())
+        logger.info("朝バッチ開始（全会場・全レース一括予想配信）")
+        from src.scheduler.runner import run_morning_all_races
+        run_morning_all_races(date.today())
 
     elif args.notify:
         logger.info("20分前通知パイプライン開始（cron方式）")

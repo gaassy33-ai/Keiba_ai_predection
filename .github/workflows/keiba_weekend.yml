@@ -1,34 +1,26 @@
 name: 競馬 土日限定 統合ワークフロー
 
 # ============================================================
-# cron スケジュール一覧（全て UTC 表記）
+# cron スケジュール（UTC 表記）
 # ============================================================
-#  ① 朝バッチ（予想ページ生成）  土/日 05:00 JST
-#      金 20:00 UTC = 土 05:00 JST
-#      土 20:00 UTC = 日 05:00 JST
+#  ① 朝バッチ（全会場・全レース一括予想配信）
+#      土 07:00 JST = 金 22:00 UTC  (DOW=5)
+#      日 07:00 JST = 土 22:00 UTC  (DOW=6)
 #
-#  ② 20分前 LINE 通知            土/日 09:00〜16:30 JST（15分おき）
-#      UTC 00:00〜07:30 on DOW=6(土) / DOW=0(日)
+#  ② 週末まとめレポート
+#      日 17:00 JST = 日 08:00 UTC  (DOW=0)
 #
-#  ③ 週末まとめレポート           日曜 17:00 JST = 日 08:00 UTC
+#  ※ 20分前個別通知は廃止。朝7時の一括配信に統合。
 # ============================================================
 
 on:
   schedule:
-    # ① 朝バッチ
-    - cron: "0 20 * * 5"           # 金 20:00 UTC = 土 05:00 JST
-    - cron: "0 20 * * 6"           # 土 20:00 UTC = 日 05:00 JST
+    # ① 朝バッチ（全会場・全レース一括）
+    - cron: "0 22 * * 5"    # 金 22:00 UTC = 土 07:00 JST
+    - cron: "0 22 * * 6"    # 土 22:00 UTC = 日 07:00 JST
 
-    # ② 20分前通知 (土) JST 09:00-16:30 = UTC 00:00-07:30 DOW=6
-    - cron: "0,15,30,45 0-6 * * 6" # 土 UTC 00:00-06:45 = JST 09:00-15:45
-    - cron: "0,15,30 7 * * 6"      # 土 UTC 07:00-07:30 = JST 16:00-16:30
-
-    # ② 20分前通知 (日) JST 09:00-16:30 = UTC 00:00-07:30 DOW=0
-    - cron: "0,15,30,45 0-6 * * 0" # 日 UTC 00:00-06:45 = JST 09:00-15:45
-    - cron: "0,15,30 7 * * 0"      # 日 UTC 07:00-07:30 = JST 16:00-16:30
-
-    # ③ 週末まとめ
-    - cron: "0 8 * * 0"            # 日 08:00 UTC = 日 17:00 JST
+    # ② 週末まとめ
+    - cron: "0 8 * * 0"     # 日 08:00 UTC = 日 17:00 JST
 
   # 手動実行（デバッグ・祝日開催など）
   workflow_dispatch:
@@ -36,22 +28,23 @@ on:
       mode:
         description: "実行モード"
         type: choice
-        options: [morning, notify, summary, test]
-        default: notify
+        options: [morning, summary, test]
+        default: morning
 
 
 # ==================================================================
-# ① 朝バッチ（予想ページ生成）
-#    cron: "0 20 * * 5" or "0 20 * * 6"  のみ実行
+# ① 朝バッチ（全会場・全レース一括予想 LINE 配信）
+#    毎週土日 07:00 JST に実行
+#    処理時間目安: ~35〜40 分（timeout-minutes: 60 で余裕あり）
 # ==================================================================
 jobs:
   morning:
-    name: 朝バッチ（予想ページ生成）
+    name: 朝バッチ（全会場・全レース一括配信）
     if: |
-      (github.event_name == 'schedule' && (github.event.schedule == '0 20 * * 5' || github.event.schedule == '0 20 * * 6'))
-      || (github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'morning')
+      (github.event_name == 'schedule' && (github.event.schedule == '0 22 * * 5' || github.event.schedule == '0 22 * * 6'))
+      || (github.event_name == 'workflow_dispatch' && (github.event.inputs.mode == 'morning' || github.event.inputs.mode == 'test'))
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 60
     permissions:
       contents: write
     concurrency:
@@ -62,14 +55,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ── 軽量な開催日チェック（Selenium不要・標準ライブラリのみ）──────
+      # ── 軽量な JRA 開催日チェック（標準ライブラリのみ・Selenium 不要）──
       - name: JRA 開催日チェック
         id: race_day
         env:
           TZ: "Asia/Tokyo"
         run: |
           python - <<'PYEOF'
-          import os, re, sys
+          import os, re
           from datetime import date
           try:
               import urllib.request
@@ -113,8 +106,17 @@ jobs:
         if: steps.race_day.outputs.is_race_day != 'false'
         run: sudo apt-get install -y fonts-noto-cjk && fc-cache -f
 
-      - name: 朝バッチ実行（予想ページ生成）
-        if: steps.race_day.outputs.is_race_day != 'false'
+      - name: テスト通知（test モード時のみ）
+        if: steps.race_day.outputs.is_race_day != 'false' && github.event.inputs.mode == 'test'
+        env:
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          LINE_CHANNEL_SECRET: ${{ secrets.LINE_CHANNEL_SECRET }}
+          LINE_TARGET_USER_ID: ${{ secrets.LINE_TARGET_USER_ID }}
+          TZ: "Asia/Tokyo"
+        run: python -m src.scheduler.runner --test
+
+      - name: 朝バッチ実行（全会場・全レース一括予想配信）
+        if: steps.race_day.outputs.is_race_day != 'false' && github.event.inputs.mode != 'test'
         env:
           LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
           LINE_CHANNEL_SECRET: ${{ secrets.LINE_CHANNEL_SECRET }}
@@ -132,7 +134,7 @@ jobs:
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add docs/
-          git diff --cached --quiet || git commit -m "chore: 朝バッチ 予想ページ更新 [skip ci]"
+          git diff --cached --quiet || git commit -m "chore: 朝バッチ 全レース予想ページ更新 [skip ci]"
           git push || true
 
       - name: Upload logs on failure
@@ -145,119 +147,7 @@ jobs:
 
 
 # ==================================================================
-# ② 20分前 LINE 通知
-#    朝バッチ・週末まとめ以外の全スケジュールで実行
-# ==================================================================
-  notify:
-    name: 20分前 LINE 通知
-    if: |
-      (github.event_name == 'schedule'
-       && github.event.schedule != '0 20 * * 5'
-       && github.event.schedule != '0 20 * * 6'
-       && github.event.schedule != '0 8 * * 0')
-      || (github.event_name == 'workflow_dispatch' && (github.event.inputs.mode == 'notify' || github.event.inputs.mode == 'test'))
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    permissions:
-      contents: write
-    # 同一スケジュール枠での多重起動を防止（後発を待機させず破棄）
-    concurrency:
-      group: keiba-notify-${{ github.event.schedule || 'manual' }}
-      cancel-in-progress: true
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      # ── 軽量な開催日チェック ────────────────────────────────────────
-      - name: JRA 開催日チェック
-        id: race_day
-        env:
-          TZ: "Asia/Tokyo"
-        run: |
-          python - <<'PYEOF'
-          import os, re
-          from datetime import date
-          try:
-              import urllib.request
-              today = date.today().strftime('%Y%m%d')
-              url = f"https://race.netkeiba.com/top/race_list.html?kaisai_date={today}"
-              req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-              with urllib.request.urlopen(req, timeout=10) as r:
-                  html = r.read().decode("utf-8", errors="ignore")
-              has_races = bool(re.search(r'race_id=\d{12}', html))
-          except Exception as e:
-              print(f"チェック失敗 ({e}) → 開催ありとして続行")
-              has_races = True
-          result = "true" if has_races else "false"
-          print(f"is_race_day={result}  ({date.today()})")
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-              f.write(f"is_race_day={result}\n")
-          PYEOF
-
-      - name: 非開催日のためスキップ
-        if: steps.race_day.outputs.is_race_day == 'false'
-        run: echo "本日は JRA 非開催日です。通知をスキップします。" && exit 0
-
-      # ── 以下は開催日のみ実行 ────────────────────────────────────────
-      - name: Set up Python 3.11
-        if: steps.race_day.outputs.is_race_day != 'false'
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: "pip"
-
-      - name: Install dependencies
-        if: steps.race_day.outputs.is_race_day != 'false'
-        run: pip install -e ".[dev]"
-
-      - name: Install Chrome & ChromeDriver
-        if: steps.race_day.outputs.is_race_day != 'false'
-        id: setup-chrome
-        uses: browser-actions/setup-chrome@v1
-
-      - name: Install Japanese fonts
-        if: steps.race_day.outputs.is_race_day != 'false'
-        run: sudo apt-get install -y fonts-noto-cjk && fc-cache -f
-
-      - name: 20分前通知 / テスト通知
-        if: steps.race_day.outputs.is_race_day != 'false'
-        env:
-          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
-          LINE_CHANNEL_SECRET: ${{ secrets.LINE_CHANNEL_SECRET }}
-          LINE_TARGET_USER_ID: ${{ secrets.LINE_TARGET_USER_ID }}
-          NETKEIBA_EMAIL: ${{ secrets.NETKEIBA_EMAIL }}
-          NETKEIBA_PASSWORD: ${{ secrets.NETKEIBA_PASSWORD }}
-          SELENIUM_HEADLESS: "true"
-          TZ: "Asia/Tokyo"
-          CHROMEDRIVER_PATH: ${{ steps.setup-chrome.outputs.chromedriver-path }}
-        run: |
-          if [ "${{ github.event.inputs.mode }}" = "test" ]; then
-            python -m src.scheduler.runner --test
-          else
-            python -m src.scheduler.daily_batch --notify
-          fi
-
-      - name: Commit & push Pages
-        if: steps.race_day.outputs.is_race_day != 'false' && always()
-        run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add docs/
-          git diff --cached --quiet || git commit -m "chore: 予想ページ更新 [skip ci]"
-          git push || true
-
-      - name: Upload logs on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: notify-logs-${{ github.run_id }}
-          path: logs/
-          retention-days: 7
-
-
-# ==================================================================
-# ③ 週末まとめレポート（日曜 17:00 JST）
+# ② 週末まとめレポート（日曜 17:00 JST）
 #    cron: "0 8 * * 0" のみ実行
 # ==================================================================
   weekly_summary:

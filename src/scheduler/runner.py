@@ -527,6 +527,269 @@ def _generate_entries_page(race_id: str, race_name: str, deadline: str, path: Pa
     path.write_text(_html_doc(f"AI予想 - {race_name}", body, active_page="today"), encoding="utf-8")
 
 
+def _make_bet_label(strategies: list) -> str:
+    """BetLine リストから短縮買い目ラベルを返す（カルーセル行表示用）。"""
+    if not strategies:
+        return "−"
+    best = max(strategies, key=lambda s: s.ev)
+    abbr_map = {
+        "単勝": "単",  "複勝": "複",  "馬連": "馬連",
+        "馬単": "馬単", "ワイド": "W", "3連複": "3複", "3連単": "3単",
+    }
+    abbr = abbr_map.get(best.bet_type, best.bet_type[:2])
+    return f"{abbr} {best.ev:.1f}x" if best.ev >= 1.3 else abbr
+
+
+def _process_race_for_morning(
+    scraper: NetkeibaScraper,
+    race: dict,
+    pedigree_cache: dict[str, dict],
+    predictor: "RacePredictor",
+    fe: "FeatureEngineer",
+) -> dict:
+    """
+    朝バッチ用: 1レースを処理して予測結果 dict を返す。
+
+    recent_form（直近成績）はスキップして NaN 扱いにする。
+    これにより全レース処理を ~30 分以内に収める（1時間枠に収まる）。
+
+    Returns
+    -------
+    dict  {race_id, race_number, race_name, start_time, course_type,
+           distance, ground_condition, weather, honmei, best_bet_label, error}
+    """
+    import pandas as pd
+    from src.scraper.weather import GROUND_CONDITION_MAP, WEATHER_MAP
+    from src.betting.strategy import generate_betting_strategies
+
+    race_id    = race["race_id"]
+    start_time = race.get("start_time")
+
+    # 1. 出走表取得（最新の馬場状態・出走取消馬を反映）
+    race_info = scraper.fetch_today_entries(race_id)
+    if not race_info.entries:
+        raise ValueError("出走馬なし（取消/取得失敗）")
+
+    # 2. 血統取得（horse_id ベースのキャッシュで重複アクセスを防止）
+    for entry in race_info.entries:
+        if entry.horse_id and entry.horse_id not in pedigree_cache:
+            try:
+                pedigree_cache[entry.horse_id] = scraper.fetch_horse_pedigree(entry.horse_id)
+            except Exception as e:
+                logger.debug(f"pedigree skip: {entry.horse_id} ({e})")
+                pedigree_cache[entry.horse_id] = {}
+
+    # 3. entry_df 組み立て（recent_form は NaN → LightGBM の欠損値処理に委ねる）
+    records = []
+    for e in race_info.entries:
+        ped = pedigree_cache.get(e.horse_id, {})
+        records.append({
+            "horse_id":          e.horse_id,
+            "horse_name":        e.horse_name,
+            "horse_number":      e.horse_number,
+            "frame_number":      e.frame_number,
+            "sex":               e.sex,
+            "age":               e.age,
+            "weight_carried":    e.weight_carried,
+            "jockey_id":         e.jockey_id,
+            "jockey_name":       e.jockey_name,
+            "father":            ped.get("father", ""),
+            "mother_father":     ped.get("mother_father", ""),
+            "recent_avg_pos":    float("nan"),   # スキップ
+            "recent_avg_last3f": float("nan"),   # スキップ
+        })
+    entry_df = pd.DataFrame(records)
+
+    # 4. 特徴量生成
+    ground_code  = GROUND_CONDITION_MAP.get(race_info.ground_condition, -1)
+    weather_code = WEATHER_MAP.get(race_info.weather, -1)
+    feature_df = fe.build_entry_features(
+        entry_df=entry_df,
+        course_type=race_info.course_type,
+        distance=race_info.distance,
+        ground_condition_code=ground_code,
+        weather_code=weather_code,
+    )
+
+    # 5. 予測
+    result = predictor.predict(race_id, race_info.race_name, feature_df)
+
+    # 6. 買い目生成
+    top_horses = [h for h in [result.honmei, result.taikou, result.ana] if h]
+    for h in top_horses:
+        h.setdefault("win_odds", None)
+    from src.betting.strategy import generate_betting_strategies
+    strategies    = generate_betting_strategies(top_horses)
+    best_bet_label = _make_bet_label(strategies)
+
+    return {
+        "race_id":          race_id,
+        "race_number":      race.get("race_number", 0),
+        "race_name":        race_info.race_name,
+        "start_time":       start_time.strftime("%H:%M") if start_time else "--:--",
+        "course_type":      race_info.course_type,
+        "distance":         race_info.distance,
+        "ground_condition": race_info.ground_condition,
+        "weather":          race_info.weather,
+        "honmei":           result.honmei,
+        "best_bet_label":   best_bet_label,
+        "is_main":          False,  # 呼び出し元が上書き
+        "error":            None,
+    }
+
+
+def run_morning_all_races(target_date: date | None = None) -> None:
+    """
+    朝7時バッチ: 全会場・全レースを一括予測して LINE カルーセルで送信する。
+
+    処理フロー:
+      1. Selenium でレーススケジュール取得
+      2. 会場（jyo_code）ごとにグループ化
+      3. 各レースの出走表 + 血統を取得（recent_form はスキップ）
+      4. 特徴量生成 → LightGBM 推論
+      5. 会場ごとの Flex Bubble → カルーセルで LINE 送信
+      6. GitHub Pages 更新 + race_schedule.json 書き出し
+
+    時間見積もり（GitHub Actions）:
+      - セットアップ: ~5 分
+      - 出走表 + 血統取得: ~25〜30 分（30 レース × ~50 秒）
+      - 推論・送信: ~2 分
+      - 合計: ~35〜40 分（timeout-minutes: 60 で余裕あり）
+    """
+    from src.line.morning_notifier import (
+        create_morning_carousel,
+        MorningNotifier,
+        _JYO_THEMES,
+        _DEFAULT_THEME,
+    )
+    from src.line.page_generator import generate_results_page
+
+    if target_date is None:
+        target_date = date.today()
+
+    logger.info(f"run_morning_all_races: {target_date} 開始")
+    notifier = MorningNotifier()
+
+    # ── 1. スケジュール取得 ──────────────────────────────────────────
+    try:
+        with RaceScheduleFetcher() as fetcher:
+            all_races = fetcher.fetch_race_list(target_date)
+            races     = fetcher.filter_by_jyo(all_races)
+        if not races:
+            logger.warning("filter_by_jyo 後 0 件 → 全レース対象に切り替え")
+            races = all_races
+    except Exception as e:
+        logger.error(f"スケジュール取得失敗: {e}")
+        notifier.send_text(f"⚠️ スケジュール取得失敗:\n{type(e).__name__}: {e}")
+        return
+
+    if not races:
+        logger.info("本日レースなし。送信スキップ。")
+        return
+
+    # ── 2. 会場ごとにグループ化 ──────────────────────────────────────
+    venue_groups: dict[str, list[dict]] = {}
+    venue_names:  dict[str, str]        = {}
+    for race in races:
+        jyo_code = race["race_id"][4:6]
+        venue_groups.setdefault(jyo_code, []).append(race)
+        if jyo_code not in venue_names:
+            venue_names[jyo_code] = (
+                race.get("jyo_name") or _JYO_THEMES.get(jyo_code, _DEFAULT_THEME)["name"]
+            )
+
+    logger.info(
+        f"会場: {list(venue_names.values())} / 総 {len(races)} R"
+    )
+
+    # ── 3. 全レース処理（Selenium 1 セッション） ────────────────────
+    fe        = FeatureEngineer.from_stats(settings.stats_path)
+    predictor = RacePredictor.from_saved_model()
+    venue_data_list: list[dict] = []
+
+    with NetkeibaScraper() as scraper:
+        pedigree_cache: dict[str, dict] = {}
+
+        for jyo_code in sorted(venue_groups.keys()):
+            jyo_races = sorted(venue_groups[jyo_code], key=lambda r: r["race_number"])
+            jyo_name  = venue_names[jyo_code]
+            main_race_id = select_main_race(jyo_races)["race_id"]
+
+            weather     = ""
+            ground_turf = ""
+            ground_dirt = ""
+            races_results: list[dict] = []
+
+            for race in jyo_races:
+                rnum = race.get("race_number", "?")
+                logger.info(f"  [{jyo_name}] R{rnum} 処理中...")
+
+                try:
+                    rdata = _process_race_for_morning(
+                        scraper, race, pedigree_cache, predictor, fe
+                    )
+                    rdata["is_main"] = (race["race_id"] == main_race_id)
+                    races_results.append(rdata)
+
+                    # 天候・馬場の収集（最初の成功レースから）
+                    if not weather and rdata.get("weather"):
+                        weather = rdata["weather"]
+                    ct = rdata.get("course_type", "")
+                    if "芝" in ct and not ground_turf:
+                        ground_turf = rdata.get("ground_condition", "")
+                    elif ("ダ" in ct or "dirt" in ct.lower()) and not ground_dirt:
+                        ground_dirt = rdata.get("ground_condition", "")
+
+                except Exception as e:
+                    logger.warning(f"  [{jyo_name}] R{rnum} スキップ: {e}")
+                    st = race.get("start_time")
+                    races_results.append({
+                        "race_id":     race["race_id"],
+                        "race_number": race.get("race_number", 0),
+                        "start_time":  st.strftime("%H:%M") if st else "--:--",
+                        "is_main":     race["race_id"] == main_race_id,
+                        "error":       str(e),
+                    })
+
+            success_count = sum(1 for r in races_results if not r.get("error"))
+            dow = "(土)" if target_date.weekday() == 5 else "(日)"
+
+            venue_data_list.append({
+                "jyo_code":    jyo_code,
+                "jyo_name":    jyo_name,
+                "date_label":  target_date.strftime("%-m/%-d") + dow,
+                "race_count":  success_count,
+                "weather":     weather,
+                "ground_turf": ground_turf,
+                "ground_dirt": ground_dirt,
+                "kaisai_date": target_date.strftime("%Y%m%d"),
+                "races":       races_results,
+            })
+            logger.info(
+                f"  [{jyo_name}] 完了: {success_count}/{len(jyo_races)} R 成功"
+            )
+
+    # ── 4. LINE カルーセル送信 ───────────────────────────────────────
+    updated_at = datetime.now().strftime("%H:%M")
+    carousel   = create_morning_carousel(venue_data_list, updated_at)
+
+    if carousel:
+        notifier.send_carousel(carousel, target_date)
+        logger.info(f"カルーセル送信完了: {len(venue_data_list)} 会場")
+    else:
+        logger.warning("venue_data 空 → カルーセル送信スキップ")
+
+    # ── 5. GitHub Pages 更新 ────────────────────────────────────────
+    try:
+        generate_results_page(target_date, Path("docs/results.html"))
+        logger.info("GitHub Pages 更新完了")
+    except Exception as e:
+        logger.warning(f"Pages 更新スキップ: {e}")
+
+    # ── 6. race_schedule.json 書き出し ──────────────────────────────
+    export_race_schedule(target_date)
+
+
 def send_test_notification() -> None:
     """LINE 接続確認用のテスト通知を送る。"""
     notifier = LineNotifier()
