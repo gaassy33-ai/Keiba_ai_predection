@@ -8,10 +8,10 @@ LINE リッチメニュー セットアップスクリプト。
 レイアウト (2500 × 843 px コンパクト):
     ┌─────────────────┬─────────────────┐  ← y=0
     │   1250×421      │   1250×421      │
-    │ ① メインレース  │ ② スケジュール  │
+    │ ① 今日の予想一覧 │ ② AIの成績・回収率│
     ├─────────────────┼─────────────────┤  ← y=421
     │   1250×422      │   1250×422      │
-    │ ③ 今日の成績    │ ④ SNS          │
+    │ ③ 開催スケジュール│ ④ 公式X        │
     └─────────────────┴─────────────────┘  ← y=843
 """
 
@@ -33,43 +33,43 @@ from config.settings import settings
 RICH_MENU_DEF: dict = {
     "size": {"width": 2500, "height": 843},   # コンパクトサイズ
     "selected": True,
-    "name": "競馬予想メニュー",
+    "name": "競馬予想メニュー v2",
     "chatBarText": "🏇 メニューを開く",
     "areas": [
-        # ① 今日のメインレース（左上）
+        # ① 今日の予想一覧（左上）→ message アクション「今日の予想」を送信
         {
             "bounds": {"x": 0, "y": 0, "width": 1250, "height": 421},
             "action": {
-                "type": "uri",
-                "label": "今日のメインレース",
-                "uri": "https://liff.line.me/2009359724-yHDAAeZg",
+                "type": "message",
+                "label": "今日の予想一覧",
+                "text": "今日の予想",
             },
         },
-        # ② 開催スケジュール（右上 / URL）
+        # ② AIの成績・回収率（右上）→ LIFF 統計ページ
         {
             "bounds": {"x": 1250, "y": 0, "width": 1250, "height": 421},
             "action": {
                 "type": "uri",
-                "label": "開催スケジュール",
-                "uri": "https://race.netkeiba.com/top/race_list.html",
+                "label": "AIの成績・回収率",
+                "uri": "https://liff.line.me/xxx-yyy",   # ← 本番 LIFF URL に差し替え
             },
         },
-        # ③ 今日の成績（左下）
+        # ③ 開催スケジュール（左下）→ netkeiba トップ
         {
             "bounds": {"x": 0, "y": 421, "width": 1250, "height": 422},
             "action": {
                 "type": "uri",
-                "label": "今日の成績",
-                "uri": "https://liff.line.me/2009359724-oGG4JgxI",
+                "label": "開催スケジュール",
+                "uri": "https://race.netkeiba.com/top/",
             },
         },
-        # ④ お問い合わせ/SNS（右下 / URL）
+        # ④ 公式X（右下）→ X アカウント
         {
             "bounds": {"x": 1250, "y": 421, "width": 1250, "height": 422},
             "action": {
                 "type": "uri",
-                "label": "お問い合わせ/SNS",
-                "uri": "https://x.com/ataru_keiba_ai",
+                "label": "公式X",
+                "uri": "https://x.com/your_account",     # ← 本番 X URL に差し替え
             },
         },
     ],
@@ -166,10 +166,10 @@ def generate_image(output_path: Path) -> None:
 
     # セル定義: (x, y, w, h, label, sub_label, bg_color)
     cells = [
-        (0,    0,   1250, 421,  "今日のメインレース", "AI予想 & 推奨買い目",   "#B71C1C"),
-        (1250, 0,   1250, 421,  "開催スケジュール",   "netkeiba へ移動",       "#0D47A1"),
-        (0,    421, 1250, 422,  "今日の成績",         "的中率 & 収支グラフ",   "#1B5E20"),
-        (1250, 421, 1250, 422,  "お問い合わせ / SNS", "X (Twitter) へ移動",   "#4A148C"),
+        (0,    0,   1250, 421,  "今日の予想一覧",      "単勝・馬連 全レース",   "#B71C1C"),
+        (1250, 0,   1250, 421,  "AIの成績・回収率",    "的中率 & 収支グラフ",   "#1B5E20"),
+        (0,    421, 1250, 422,  "開催スケジュール",    "netkeiba へ移動",       "#0D47A1"),
+        (1250, 421, 1250, 422,  "公式X",               "X (Twitter) へ移動",   "#4A148C"),
     ]
 
     font_lg = _find_font(90)   # メインラベル
@@ -207,19 +207,70 @@ def generate_image(output_path: Path) -> None:
 # CLI エントリーポイント
 # ---------------------------------------------------------------------------
 
-def setup() -> None:
-    """リッチメニューを作成・画像アップロード・デフォルト設定する。"""
-    image_path = Path("data/rich_menu.png")
-    if not image_path.exists():
-        logger.info("Generating rich menu image...")
-        generate_image(image_path)
+def clear_user_richmenu(user_id: str) -> None:
+    """ユーザー個別に設定されたリッチメニューを解除する。"""
+    resp = requests.delete(
+        f"{_BASE}/user/{user_id}/richmenu", headers=_HEADERS
+    )
+    if resp.status_code == 200:
+        logger.info(f"Cleared per-user rich menu: {user_id}")
+    else:
+        logger.warning(f"clear_user_richmenu [{resp.status_code}]: {resp.text}")
 
+
+def setup(user_id: str | None = None) -> None:
+    """
+    リッチメニューを作成・画像アップロード・デフォルト設定する。
+
+    手順:
+      1. 既存メニューを全削除（旧メニューが残らないようにする）
+      2. 画像を強制再生成（キャッシュを使わない）
+      3. 新メニューを作成・画像アップロード・デフォルト設定
+      4. ユーザー個別割当がある場合は解除（user_id 指定時）
+      5. 設定確認
+    """
+    # ── 1. 既存メニュー全削除 ────────────────────────────────────────
+    logger.info("Step 1: 既存リッチメニューを全削除...")
+    delete_all()
+
+    # ── 2. 画像を強制再生成 ──────────────────────────────────────────
+    image_path = Path("data/rich_menu.png")
+    if image_path.exists():
+        image_path.unlink()
+        logger.info(f"古い画像を削除: {image_path}")
+    logger.info("Step 2: リッチメニュー画像を生成...")
+    generate_image(image_path)
+
+    # ── 3. メニュー作成・アップロード・デフォルト設定 ────────────────
+    logger.info("Step 3: メニュー作成・アップロード・デフォルト設定...")
     rich_menu_id = create_rich_menu()
     upload_image(rich_menu_id, image_path)
     set_default(rich_menu_id)
-
     Path("data/rich_menu_id.txt").write_text(rich_menu_id)
+
+    # ── 4. ユーザー個別割当の解除（指定時）─────────────────────────
+    if user_id:
+        logger.info(f"Step 4: ユーザー個別割当を解除: {user_id}")
+        clear_user_richmenu(user_id)
+
+    # ── 5. 設定確認 ──────────────────────────────────────────────────
+    logger.info("Step 5: 設定確認...")
+    resp = requests.get(f"{_BASE}/richmenu/list", headers=_HEADERS)
+    menus = resp.json().get("richmenus", []) if resp.ok else []
+    logger.info(f"現在のリッチメニュー数: {len(menus)}")
+    for m in menus:
+        logger.info(f"  {m['richMenuId']}  name={m.get('name')}  selected={m.get('selected')}")
+
+    default_resp = requests.get(f"{_BASE}/user/all/richmenu", headers=_HEADERS)
+    if default_resp.ok:
+        default_id = default_resp.json().get("richMenuId", "")
+        match = "✅ 一致" if default_id == rich_menu_id else "❌ 不一致"
+        logger.info(f"デフォルトメニュー: {default_id}  {match}")
+    else:
+        logger.warning(f"デフォルト確認失敗 [{default_resp.status_code}]: {default_resp.text}")
+
     logger.info("✅ Rich menu setup complete!")
+    print(f"\n新しいリッチメニュー ID: {rich_menu_id}")
     print("\nArea JSON:")
     print(json.dumps(RICH_MENU_DEF, ensure_ascii=False, indent=2))
 
@@ -227,8 +278,14 @@ def setup() -> None:
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else "setup"
     if cmd == "setup":
-        setup()
+        # 省略可: python -m src.line.rich_menu setup <USER_ID>
+        uid = sys.argv[2] if len(sys.argv) > 2 else None
+        if uid is None:
+            # 環境変数からも取得
+            import os
+            uid = os.environ.get("LINE_TARGET_USER_ID")
+        setup(user_id=uid)
     elif cmd == "delete":
         delete_all()
     else:
-        print("Usage: python -m src.line.rich_menu [setup|delete]")
+        print("Usage: python -m src.line.rich_menu [setup [USER_ID]|delete]")

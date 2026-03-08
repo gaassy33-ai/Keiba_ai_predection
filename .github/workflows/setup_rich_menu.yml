@@ -38,4 +38,5 @@ jobs:
           LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
           LINE_CHANNEL_SECRET: ${{ secrets.LINE_CHANNEL_SECRET }}
           LINE_TARGET_USER_ID: ${{ secrets.LINE_TARGET_USER_ID }}
-        run: python -m src.line.rich_menu ${{ github.event.inputs.action }}
+        run: |
+          python -m src.line.rich_menu ${{ github.event.inputs.action }} "$LINE_TARGET_USER_ID"
