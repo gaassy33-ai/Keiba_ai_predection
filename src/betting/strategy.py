@@ -185,7 +185,7 @@ def generate_betting_strategies(
     n = len(sh)
 
     # mark 補完
-    _default_marks = ["◎", "○", "▲", "△", "△", "△"]
+    _default_marks = ["◎", "○", "▲", "☆", "△", "△", "△"]
     sh = [
         {**h, "mark": h.get("mark") or (_default_marks[i] if i < len(_default_marks) else "△")}
         for i, h in enumerate(sh)
@@ -238,9 +238,9 @@ def generate_betting_strategies(
                 ev=ev,
             ))
 
-    # ── 馬連（◎ → ○▲ 流し）────────────────────────────────────────────────
+    # ── 馬連（◎ → ○▲☆△ 流し、最大4点）────────────────────────────────────
     if n >= 2:
-        partner_idx = list(range(1, min(3, n)))  # ○▲
+        partner_idx = list(range(1, min(5, n)))  # ○▲☆△
         mq_sum = sum(_prob_quinella(model_probs, 0, j) for j in partner_idx)
         xq_sum = sum(_prob_quinella(market_probs, 0, j) for j in partner_idx)
         odds = _est_odds(mq_sum, xq_sum, "馬連")
@@ -250,15 +250,15 @@ def generate_betting_strategies(
             bets.append(BetLine(
                 bet_type="馬連",
                 label=f"◎{num(honmei)}→{partner_str} 流し",
-                description=f"◎→○▲ 流し {len(partner_idx)}点",
+                description=f"◎→○▲☆△ 流し {len(partner_idx)}点",
                 combo_count=len(partner_idx),
                 prob=mq_sum,
                 est_odds=odds,
                 ev=ev,
             ))
 
-    # ── ワイド（上位4頭から EV 上位2点）──────────────────────────────────
-    top_n = min(4, n)
+    # ── ワイド（上位5頭から EV 上位2点）──────────────────────────────────
+    top_n = min(5, n)
     wide_candidates: list[BetLine] = []
     for i, j in combinations(range(top_n), 2):
         mw = _prob_wide(model_probs, i, j)
@@ -307,10 +307,10 @@ def generate_betting_strategies(
                 ev=ev,
             ))
 
-    # ── 3連単（◎1着固定 → ○▲ → ○▲△ 流し）─────────────────────────────
+    # ── 3連単（◎1着固定 → ○▲☆ → ○▲☆△ 流し）──────────────────────────
     if n >= 3:
-        second_pool = list(range(1, min(3, n)))      # ○▲
-        third_pool  = list(range(1, min(4, n)))      # ○▲△
+        second_pool = list(range(1, min(4, n)))      # ○▲☆
+        third_pool  = list(range(1, min(5, n)))      # ○▲☆△
         combos_3t   = [(j, k) for j in second_pool for k in third_pool if k != j]
 
         if combos_3t:

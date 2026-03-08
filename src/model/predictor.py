@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import pandas as pd
 from loguru import logger
@@ -19,13 +19,16 @@ from src.model.trainer import ModelTrainer
 
 @dataclass
 class PredictionResult:
-    """1レース分の予測結果"""
+    """1レース分の予測結果（5段階印体系）"""
     race_id: str
     race_name: str
-    honmei: dict      # 本命（1位）
-    taikou: dict      # 対抗（2位）
-    ana: dict         # 穴馬（確率は低いが馬番が小さい等の条件）
-    all_predictions: pd.DataFrame  # 全馬の予測確率
+    honmei: dict           # ◎ 本命（1位）
+    taikou: dict           # ○ 対抗（2位）
+    ana: dict              # 旧・穴馬（後方互換 = tanana と同値）
+    all_predictions: pd.DataFrame  # 全馬の予測確率（win_prob 降順）
+    tanana: dict = field(default_factory=dict)      # ▲ 単穴（3位）
+    hoshi:  dict = field(default_factory=dict)      # ☆ 穴候補（4位 or 高EV）
+    renshita: list = field(default_factory=list)    # △ 連下（5-7位、最大3頭）
 
 
 class RacePredictor:
@@ -84,22 +87,37 @@ class RacePredictor:
         honmei = result_df.iloc[0].to_dict()
         taikou = result_df.iloc[1].to_dict() if len(result_df) > 1 else {}
 
-        # 穴馬: 上位2頭以外で、馬番が若い or フレームが外枠
-        ana_candidates = result_df.iloc[2:].copy()
-        if not ana_candidates.empty:
-            # 確率が一定以上（上位確率の50%以上）かつ人気薄になりやすい外枠を優先
-            threshold = honmei["win_prob"] * 0.4
-            filtered = ana_candidates[ana_candidates["win_prob"] >= threshold]
-            if filtered.empty:
-                filtered = ana_candidates
-            ana = filtered.sort_values("frame_number", ascending=False).iloc[0].to_dict()
+        # ▲ 単穴: 3位
+        tanana = result_df.iloc[2].to_dict() if len(result_df) > 2 else {}
+
+        # ☆ 穴候補: 4位 by win_prob（win_odds がある場合は EV 最高馬を優先）
+        if len(result_df) > 3:
+            rank4plus = result_df.iloc[3:].copy()
+            if "win_odds" in rank4plus.columns and rank4plus["win_odds"].notna().any():
+                rank4plus = rank4plus.copy()
+                rank4plus["_ev"] = rank4plus["win_prob"] * rank4plus["win_odds"].fillna(0)
+                best_i = rank4plus["_ev"].idxmax()
+                hoshi = rank4plus.loc[best_i].drop("_ev").to_dict()
+            else:
+                hoshi = result_df.iloc[3].to_dict()
         else:
-            ana = {}
+            hoshi = {}
+
+        # △ 連下: 5-7位（最大3頭）
+        renshita = [
+            result_df.iloc[i].to_dict()
+            for i in range(4, min(7, len(result_df)))
+        ]
+
+        # 後方互換: ana = tanana（外枠穴馬ロジックを廃止）
+        ana = tanana
 
         logger.info(
             f"Prediction done: {race_name} | "
-            f"本命={honmei.get('horse_name')} ({honmei.get('win_prob', 0):.1%}) | "
-            f"対抗={taikou.get('horse_name')} | 穴={ana.get('horse_name')}"
+            f"◎{honmei.get('horse_name')} ({honmei.get('win_prob', 0):.1%}) | "
+            f"○{taikou.get('horse_name')} | ▲{tanana.get('horse_name')} | "
+            f"☆{hoshi.get('horse_name')} | "
+            f"△{[h.get('horse_name') for h in renshita]}"
         )
 
         return PredictionResult(
@@ -109,4 +127,7 @@ class RacePredictor:
             taikou=taikou,
             ana=ana,
             all_predictions=result_df,
+            tanana=tanana,
+            hoshi=hoshi,
+            renshita=renshita,
         )

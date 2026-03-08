@@ -19,13 +19,14 @@ venue_data_list の各要素:
                 "race_number":    int,
                 "start_time":     str,   # "15:40"
                 "is_main":        bool,
-                "honmei": {              # None on error
-                    "horse_number":  int,
-                    "frame_number":  int | str,
-                    "horse_name":    str,
-                    "win_prob":      float,
+                "marks": {               # None on error
+                    "honmei":  {"horse_number": int, "frame_number": int, "horse_name": str, "win_prob": float},
+                    "taikou":  {"horse_number": int, ...} | None,
+                    "tanana":  {"horse_number": int, ...} | None,
+                    "hoshi":   {"horse_number": int, ...} | None,
+                    "renshita": [{"horse_number": int}, ...],
                 },
-                "best_bet_label": str,   # "単 1.8x" など
+                "best_bet_label": str,   # "馬連 2.1x" など
                 "error":          str | None,
             },
             ...
@@ -75,6 +76,21 @@ _ROW_EVEN = "#0f1224"
 # メインレース行
 _MAIN_BG     = "#1a0f00"
 _MAIN_BORDER = "#ff8f00"
+
+# 印の色
+_MARK_COLORS: dict[str, str] = {
+    "honmei": "#ef5350",   # ◎ 赤
+    "taikou": "#ff7043",   # ○ オレンジ
+    "tanana": "#66bb6a",   # ▲ 緑
+    "hoshi":  "#ffd600",   # ☆ 金
+    "delta":  "#90a4ae",   # △ グレーブルー
+}
+_MARK_CHARS: dict[str, str] = {
+    "honmei": "◎",
+    "taikou": "○",
+    "tanana": "▲",
+    "hoshi":  "☆",
+}
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -148,8 +164,8 @@ def _col_header_row() -> dict:
                 "size": "xxs", "color": "#90caf9", "flex": 2,
             },
             {
-                "type": "text", "text": "◎ 本命",
-                "size": "xxs", "color": "#90caf9", "flex": 5,
+                "type": "text", "text": "◎本命 / ○▲☆△",
+                "size": "xxs", "color": "#90caf9", "flex": 7,
             },
             {
                 "type": "text", "text": "確率",
@@ -169,12 +185,58 @@ def _col_header_row() -> dict:
 # レース行
 # ─────────────────────────────────────────────────────────────────────
 
+def _mark_sub_row(marks: dict, is_main: bool) -> dict:
+    """
+    ○▲☆△ を横並びで表示するサブ行（2行目）。
+    renshita の馬番はカンマ区切りでまとめる。
+    """
+    items: list[dict] = []
+
+    for key in ("taikou", "tanana", "hoshi"):
+        horse = marks.get(key)
+        if not horse:
+            continue
+        char  = _MARK_CHARS[key]
+        color = _MARK_COLORS[key]
+        items.append({
+            "type": "text",
+            "text": f"{char}{horse['horse_number']}",
+            "size": "xxs",
+            "color": color,
+        })
+
+    # △ 連下: "△1,7,15" のようにまとめる
+    renshita = marks.get("renshita") or []
+    if renshita:
+        nums = ",".join(str(h["horse_number"]) for h in renshita)
+        items.append({
+            "type": "text",
+            "text": f"△{nums}",
+            "size": "xxs",
+            "color": _MARK_COLORS["delta"],
+            "flex": 1,
+        })
+
+    if not items:
+        # 全て None の場合（馬数が少ないレース）
+        return {"type": "box", "layout": "horizontal", "contents": [
+            {"type": "text", "text": "−", "size": "xxs", "color": "#444455"},
+        ]}
+
+    return {
+        "type": "box",
+        "layout": "horizontal",
+        "spacing": "sm",
+        "contents": items,
+    }
+
+
 def _race_row(race: dict, row_index: int) -> dict:
     """
     1レース分の横並び行コンポーネントを生成する。
 
-    列構成（flex 比 = 1:2:5:2:3）:
-        R#  |  発走  |  枠番badge 馬番badge 馬名  |  確率  |  買い目
+    列構成（flex 比 = 1:2:7:2:3）:
+        R#  |  発走  |  [2行: ◎本命 / ○▲☆△]  |  確率  |  買い目
     """
     is_main   = race.get("is_main", False)
     has_error = bool(race.get("error"))
@@ -200,6 +262,7 @@ def _race_row(race: dict, row_index: int) -> dict:
         r_col = {
             "type": "text", "text": rnum_text,
             "size": "xs", "color": r_color, "flex": 1,
+            "gravity": "center",
         }
 
     # ── 発走時刻列 ──────────────────────────────────────
@@ -207,13 +270,15 @@ def _race_row(race: dict, row_index: int) -> dict:
         "type": "text",
         "text": race.get("start_time", "--:--"),
         "size": "xs", "color": time_color, "flex": 2,
+        "gravity": "center",
     }
 
-    # ── 本命馬列 ──────────────────────────────────────
+    # ── 印+馬情報列（2行）──────────────────────────────
     if has_error:
-        honmei_col: dict = {
+        marks_col: dict = {
             "type": "text", "text": "取得失敗",
-            "size": "xs", "color": "#444455", "flex": 5,
+            "size": "xs", "color": "#444455", "flex": 7,
+            "gravity": "center",
         }
         prob_col: dict = {
             "type": "text", "text": "−",
@@ -224,35 +289,43 @@ def _race_row(race: dict, row_index: int) -> dict:
             "size": "xxs", "color": "#444455", "flex": 3, "align": "end",
         }
     else:
-        honmei    = race.get("honmei") or {}
-        win_prob  = float(honmei.get("win_prob", 0.0))
-        horse_num = honmei.get("horse_number", 0)
-        horse_name = honmei.get("horse_name", "---")
+        marks    = race.get("marks") or {}
+        honmei_h = marks.get("honmei") or {}
+        win_prob  = float(honmei_h.get("win_prob", 0.0))
+        horse_num = honmei_h.get("horse_number", 0)
+        horse_name = honmei_h.get("horse_name", "---")
 
         # 枠番バッジ
         try:
-            frame_int   = int(honmei.get("frame_number", 0))
-            frame_text  = str(frame_int) if frame_int > 0 else "−"
+            frame_int  = int(honmei_h.get("frame_number", 0))
+            frame_text = str(frame_int) if frame_int > 0 else "−"
         except (TypeError, ValueError):
-            frame_text  = "−"
+            frame_text = "−"
 
         badge_px   = 18 if is_main else 16
         frame_bg   = "#6d4c41" if is_main else "#5d4037"
         horse_bg   = "#283593" if is_main else "#1a237e"
         name_color = "#ffffff" if is_main else "#ccccdd"
 
-        # 馬名を 6 文字に制限（LINE xs サイズの表示限界）
+        # 馬名を 6 文字に制限
         name_short = (horse_name[:6] + "…") if len(horse_name) > 6 else horse_name
 
-        honmei_col = {
+        # 1行目: ◎ [枠][馬] 馬名
+        honmei_line: dict = {
             "type": "box",
             "layout": "horizontal",
-            "flex": 5,
             "alignItems": "center",
             "spacing": "xs",
             "contents": [
-                _num_badge(frame_text,       frame_bg, badge_px),
-                _num_badge(str(horse_num),   horse_bg, badge_px),
+                {
+                    "type": "text",
+                    "text": "◎",
+                    "size": "sm",
+                    "color": _MARK_COLORS["honmei"],
+                    "weight": "bold",
+                },
+                _num_badge(frame_text,     frame_bg, badge_px),
+                _num_badge(str(horse_num), horse_bg, badge_px),
                 {
                     "type": "text",
                     "text": name_short,
@@ -265,6 +338,17 @@ def _race_row(race: dict, row_index: int) -> dict:
             ],
         }
 
+        # 2行目: ○▲☆△
+        sub_line = _mark_sub_row(marks, is_main)
+
+        marks_col = {
+            "type": "box",
+            "layout": "vertical",
+            "flex": 7,
+            "spacing": "xxs",
+            "contents": [honmei_line, sub_line],
+        }
+
         prob_col = {
             "type": "text",
             "text": f"{win_prob:.0%}",
@@ -273,6 +357,7 @@ def _race_row(race: dict, row_index: int) -> dict:
             "weight": "bold" if is_main else "regular",
             "flex": 2,
             "align": "center",
+            "gravity": "center",
         }
         bet_col = {
             "type": "text",
@@ -282,6 +367,7 @@ def _race_row(race: dict, row_index: int) -> dict:
             "weight": "bold" if is_main else "regular",
             "flex": 3,
             "align": "end",
+            "gravity": "center",
         }
 
     row: dict = {
@@ -292,7 +378,7 @@ def _race_row(race: dict, row_index: int) -> dict:
         "paddingBottom": padding_v,
         "paddingStart": "sm",
         "paddingEnd": "sm",
-        "contents": [r_col, t_col, honmei_col, prob_col, bet_col],
+        "contents": [r_col, t_col, marks_col, prob_col, bet_col],
     }
 
     # メインレース行にゴールド枠線

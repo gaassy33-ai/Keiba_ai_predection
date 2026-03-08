@@ -527,6 +527,43 @@ def _generate_entries_page(race_id: str, race_name: str, deadline: str, path: Pa
     path.write_text(_html_doc(f"AI予想 - {race_name}", body, active_page="today"), encoding="utf-8")
 
 
+def _build_marks(result: "PredictionResult") -> dict:
+    """
+    PredictionResult から Flex Message 用の marks dict を構築する。
+
+    Returns
+    -------
+    dict
+        {
+            "honmei":   {horse_number, frame_number, horse_name, win_prob} | None,
+            "taikou":   {...} | None,
+            "tanana":   {...} | None,
+            "hoshi":    {...} | None,
+            "renshita": [{"horse_number": int}, ...],   # 馬番のみ
+        }
+    """
+    def _slim(h: dict | None) -> dict | None:
+        if not h:
+            return None
+        return {
+            "horse_number": int(h.get("horse_number", 0)),
+            "frame_number": int(h.get("frame_number", 0)),
+            "horse_name":   str(h.get("horse_name", "")),
+            "win_prob":     float(h.get("win_prob", 0.0)),
+        }
+
+    return {
+        "honmei":   _slim(result.honmei),
+        "taikou":   _slim(result.taikou),
+        "tanana":   _slim(result.tanana),
+        "hoshi":    _slim(result.hoshi),
+        "renshita": [
+            {"horse_number": int(h.get("horse_number", 0))}
+            for h in (result.renshita or []) if h
+        ],
+    }
+
+
 def _make_bet_label(strategies: list) -> str:
     """BetLine リストから短縮買い目ラベルを返す（カルーセル行表示用）。"""
     if not strategies:
@@ -614,12 +651,16 @@ def _process_race_for_morning(
     # 5. 予測
     result = predictor.predict(race_id, race_info.race_name, feature_df)
 
-    # 6. 買い目生成
-    top_horses = [h for h in [result.honmei, result.taikou, result.ana] if h]
+    # 6. marks dict 構築
+    marks = _build_marks(result)
+
+    # 7. 買い目生成（◎○▲☆△ の全馬を渡す）
+    all_marked = [result.honmei, result.taikou, result.tanana, result.hoshi] + list(result.renshita)
+    top_horses = [h for h in all_marked if h]
     for h in top_horses:
         h.setdefault("win_odds", None)
     from src.betting.strategy import generate_betting_strategies
-    strategies    = generate_betting_strategies(top_horses)
+    strategies     = generate_betting_strategies(top_horses)
     best_bet_label = _make_bet_label(strategies)
 
     return {
@@ -631,7 +672,7 @@ def _process_race_for_morning(
         "distance":         race_info.distance,
         "ground_condition": race_info.ground_condition,
         "weather":          race_info.weather,
-        "honmei":           result.honmei,
+        "marks":            marks,
         "best_bet_label":   best_bet_label,
         "is_main":          False,  # 呼び出し元が上書き
         "error":            None,
