@@ -177,9 +177,9 @@ def schedule_today_races() -> None:
     """
     当日のレース一覧を取得し、発走 N 分前のジョブを登録する。
     """
-    fetcher = RaceScheduleFetcher()
-    races = fetcher.fetch_race_list(date.today())
-    races = fetcher.filter_by_jyo(races)
+    with RaceScheduleFetcher() as fetcher:
+        races = fetcher.fetch_race_list(date.today())
+        races = fetcher.filter_by_jyo(races)
 
     notify_delta = timedelta(minutes=settings.notify_before_minutes)
     now = datetime.now()
@@ -209,9 +209,9 @@ def run_once_for_date(target_date: date) -> None:
     GitHub Actions から呼び出す用。
     当日のレース全てに対して即時実行する（発走前のみ）。
     """
-    fetcher = RaceScheduleFetcher()
-    races = fetcher.fetch_race_list(target_date)
-    races = fetcher.filter_by_jyo(races)
+    with RaceScheduleFetcher() as fetcher:
+        races = fetcher.fetch_race_list(target_date)
+        races = fetcher.filter_by_jyo(races)
 
     notify_delta = timedelta(minutes=settings.notify_before_minutes)
     now = datetime.now()
@@ -239,13 +239,12 @@ def run_morning_pages() -> None:
 
     # ── STEP 1: レーススケジュール取得 ────────────────────────────────
     try:
-        fetcher = RaceScheduleFetcher()
-        all_races = fetcher.fetch_race_list(date.today())
+        with RaceScheduleFetcher() as fetcher:
+            all_races = fetcher.fetch_race_list(date.today())
+            races = fetcher.filter_by_jyo(all_races)
         logger.info(f"全レース数: {len(all_races)}")
         for r in all_races:
             logger.info(f"  race_id={r['race_id']} jyo={r.get('jyo_name')} R{r.get('race_number')} {r.get('race_name')}")
-
-        races = fetcher.filter_by_jyo(all_races)
         logger.info(f"filter_by_jyo 後: {len(races)} 件 (target_jyo_codes={settings.target_jyo_codes})")
 
         if not races:

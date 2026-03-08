@@ -116,9 +116,9 @@ def _handle_main_race(reply_token: str) -> None:
 
     try:
         # ── レーススケジュール取得 ─────────────────────────────────────
-        fetcher = RaceScheduleFetcher()
-        races = fetcher.fetch_race_list(date.today())
-        races = fetcher.filter_by_jyo(races)
+        with RaceScheduleFetcher() as fetcher:
+            races = fetcher.fetch_race_list(date.today())
+            races = fetcher.filter_by_jyo(races)
 
         if not races:
             _reply(reply_token, [TextMessage(text=(
