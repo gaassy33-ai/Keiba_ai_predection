@@ -78,30 +78,34 @@ def run_pipeline_for_race(race: dict) -> None:
         with NetkeibaScraper() as scraper:
             race_info = scraper.fetch_today_entries(race_id)
 
-            # 3. 血統情報を付加
+            # 3. 血統情報・直近成績を付加
             pedigree_map: dict[str, dict] = {}
+            recent_form_map: dict[str, dict] = {}
             for entry in race_info.entries:
                 if entry.horse_id:
-                    ped = scraper.fetch_horse_pedigree(entry.horse_id)
-                    pedigree_map[entry.horse_id] = ped
+                    pedigree_map[entry.horse_id] = scraper.fetch_horse_pedigree(entry.horse_id)
+                    recent_form_map[entry.horse_id] = scraper.fetch_horse_recent_form(entry.horse_id)
 
         # 4. entry_df を組み立て
         import pandas as pd
         entry_records = []
         for e in race_info.entries:
-            ped = pedigree_map.get(e.horse_id, {})
+            ped  = pedigree_map.get(e.horse_id, {})
+            form = recent_form_map.get(e.horse_id, {})
             entry_records.append({
-                "horse_id": e.horse_id,
-                "horse_name": e.horse_name,
-                "horse_number": e.horse_number,
-                "frame_number": e.frame_number,
-                "sex": e.sex,
-                "age": e.age,
-                "weight_carried": e.weight_carried,
-                "jockey_id": e.jockey_id,
-                "jockey_name": e.jockey_name,
-                "father": ped.get("father", ""),
-                "mother_father": ped.get("mother_father", ""),
+                "horse_id":          e.horse_id,
+                "horse_name":        e.horse_name,
+                "horse_number":      e.horse_number,
+                "frame_number":      e.frame_number,
+                "sex":               e.sex,
+                "age":               e.age,
+                "weight_carried":    e.weight_carried,
+                "jockey_id":         e.jockey_id,
+                "jockey_name":       e.jockey_name,
+                "father":            ped.get("father", ""),
+                "mother_father":     ped.get("mother_father", ""),
+                "recent_avg_pos":    form.get("recent_avg_pos", float("nan")),
+                "recent_avg_last3f": form.get("recent_avg_last3f", float("nan")),
             })
         entry_df = pd.DataFrame(entry_records)
 
@@ -308,25 +312,30 @@ def run_morning_pages() -> None:
         with NetkeibaScraper() as scraper:
             race_info = scraper.fetch_today_entries(race_id)
             pedigree_map: dict[str, dict] = {}
+            recent_form_map: dict[str, dict] = {}
             for entry in race_info.entries:
                 if entry.horse_id:
                     pedigree_map[entry.horse_id] = scraper.fetch_horse_pedigree(entry.horse_id)
+                    recent_form_map[entry.horse_id] = scraper.fetch_horse_recent_form(entry.horse_id)
 
         entry_records = []
         for e in race_info.entries:
-            ped = pedigree_map.get(e.horse_id, {})
+            ped  = pedigree_map.get(e.horse_id, {})
+            form = recent_form_map.get(e.horse_id, {})
             entry_records.append({
-                "horse_id":       e.horse_id,
-                "horse_name":     e.horse_name,
-                "horse_number":   e.horse_number,
-                "frame_number":   e.frame_number,
-                "sex":            e.sex,
-                "age":            e.age,
-                "weight_carried": e.weight_carried,
-                "jockey_id":      e.jockey_id,
-                "jockey_name":    e.jockey_name,
-                "father":         ped.get("father", ""),
-                "mother_father":  ped.get("mother_father", ""),
+                "horse_id":          e.horse_id,
+                "horse_name":        e.horse_name,
+                "horse_number":      e.horse_number,
+                "frame_number":      e.frame_number,
+                "sex":               e.sex,
+                "age":               e.age,
+                "weight_carried":    e.weight_carried,
+                "jockey_id":         e.jockey_id,
+                "jockey_name":       e.jockey_name,
+                "father":            ped.get("father", ""),
+                "mother_father":     ped.get("mother_father", ""),
+                "recent_avg_pos":    form.get("recent_avg_pos", float("nan")),
+                "recent_avg_last3f": form.get("recent_avg_last3f", float("nan")),
             })
         entry_df = pd.DataFrame(entry_records)
 

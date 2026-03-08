@@ -419,6 +419,80 @@ class NetkeibaScraper:
         logger.info(f"Collection complete: {len(result)} race_ids total.")
         return result
 
+    def fetch_horse_recent_form(self, horse_id: str, n: int = 5) -> dict:
+        """
+        馬の直近 n 走の着順平均・上がり3F 平均を取得する（requests 使用）。
+
+        Parameters
+        ----------
+        horse_id : str
+            netkeiba の horse_id
+        n : int
+            直近何走を参照するか
+
+        Returns
+        -------
+        dict
+            {"recent_avg_pos": float, "recent_avg_last3f": float}
+            データ取得失敗時は NaN を返す。
+        """
+        import numpy as _np
+
+        url = f"{self.BASE_URL}/horse/result/{horse_id}/"
+        logger.debug(f"Fetching recent form: {url}")
+        try:
+            soup = self._get(url)
+        except Exception as e:
+            logger.warning(f"Recent form fetch failed for {horse_id}: {e}")
+            return {"recent_avg_pos": float("nan"), "recent_avg_last3f": float("nan")}
+
+        # テーブルを探す
+        table = soup.select_one("table.db_h_race_results, table.race_table_01")
+        if table is None:
+            logger.debug(f"No result table for horse_id={horse_id}")
+            return {"recent_avg_pos": float("nan"), "recent_avg_last3f": float("nan")}
+
+        # ヘッダーから着順・上がり列のインデックスを動的取得
+        header_row = table.select_one("tr")
+        headers = [th.get_text(strip=True) for th in header_row.select("th")] if header_row else []
+        pos_idx, last3f_idx = None, None
+        for i, h in enumerate(headers):
+            if h == "着順":
+                pos_idx = i
+            elif "上がり" in h:
+                last3f_idx = i
+        # フォールバック: 典型的な列配置
+        if pos_idx is None:
+            pos_idx = 11
+        if last3f_idx is None:
+            last3f_idx = 18
+
+        positions: list[float] = []
+        last3fs: list[float] = []
+        for tr in table.select("tr")[1: n + 1]:
+            tds = tr.select("td")
+            if not tds:
+                continue
+            if pos_idx < len(tds):
+                try:
+                    val = int(tds[pos_idx].get_text(strip=True))
+                    if 1 <= val <= 18:
+                        positions.append(val)
+                except (ValueError, TypeError):
+                    pass
+            if last3f_idx < len(tds):
+                try:
+                    val = float(tds[last3f_idx].get_text(strip=True))
+                    if 30.0 <= val <= 50.0:
+                        last3fs.append(val)
+                except (ValueError, TypeError):
+                    pass
+
+        return {
+            "recent_avg_pos": float(_np.mean(positions)) if positions else float("nan"),
+            "recent_avg_last3f": float(_np.mean(last3fs)) if last3fs else float("nan"),
+        }
+
     def fetch_bulk_race_meta(self, race_ids: list[str]) -> pd.DataFrame:
         """
         race_id リストに対してレースメタ情報を一括取得する。

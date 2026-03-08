@@ -147,23 +147,32 @@ def _handle_main_race(reply_token: str) -> None:
         from src.scraper.netkeiba_scraper import NetkeibaScraper
         with NetkeibaScraper() as scraper:
             race_info = scraper.fetch_today_entries(race_id)
+            pedigree_map: dict[str, dict] = {}
+            recent_form_map: dict[str, dict] = {}
+            for e in race_info.entries:
+                if e.horse_id:
+                    pedigree_map[e.horse_id] = scraper.fetch_horse_pedigree(e.horse_id)
+                    recent_form_map[e.horse_id] = scraper.fetch_horse_recent_form(e.horse_id)
 
-        entry_records = [
-            {
-                "horse_id":       e.horse_id,
-                "horse_name":     e.horse_name,
-                "horse_number":   e.horse_number,
-                "frame_number":   e.frame_number,
-                "sex":            getattr(e, "sex", ""),
-                "age":            getattr(e, "age", 0),
-                "jockey_id":      getattr(e, "jockey_id", ""),
-                "jockey_name":    getattr(e, "jockey_name", ""),
-                "weight_carried": getattr(e, "weight_carried", 55),
-                "father":         "",
-                "mother_father":  "",
-            }
-            for e in race_info.entries
-        ]
+        entry_records = []
+        for e in race_info.entries:
+            ped  = pedigree_map.get(e.horse_id, {})
+            form = recent_form_map.get(e.horse_id, {})
+            entry_records.append({
+                "horse_id":          e.horse_id,
+                "horse_name":        e.horse_name,
+                "horse_number":      e.horse_number,
+                "frame_number":      e.frame_number,
+                "sex":               getattr(e, "sex", ""),
+                "age":               getattr(e, "age", 0),
+                "jockey_id":         getattr(e, "jockey_id", ""),
+                "jockey_name":       getattr(e, "jockey_name", ""),
+                "weight_carried":    getattr(e, "weight_carried", 55),
+                "father":            ped.get("father", ""),
+                "mother_father":     ped.get("mother_father", ""),
+                "recent_avg_pos":    form.get("recent_avg_pos", float("nan")),
+                "recent_avg_last3f": form.get("recent_avg_last3f", float("nan")),
+            })
         entry_df = pd.DataFrame(entry_records)
 
         # ── 特徴量エンジニアリング ─────────────────────────────────────

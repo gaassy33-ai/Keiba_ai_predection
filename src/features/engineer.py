@@ -220,9 +220,15 @@ class FeatureEngineer:
                 (self._jockey_course_stats["course_type"] == course_type)
                 & (self._jockey_course_stats["distance_bin"] == distance_label)
             ][["jockey_id", "jockey_win_rate", "jockey_place_rate", "jockey_runs"]].copy()
-            # jockey_id の型を統一してからマージ
-            df["jockey_id"] = df["jockey_id"].astype(str)
-            jockey_filtered["jockey_id"] = jockey_filtered["jockey_id"].astype(str)
+            # jockey_id を正規化（先頭ゼロを除去）して型を統一
+            # 学習CSV: int 1192 → "1192"
+            # スクレイプ: str "01192" → int 1192 → "1192"
+            def _norm_jid(s: pd.Series) -> pd.Series:
+                return s.astype(str).apply(
+                    lambda x: str(int(x)) if x.strip().isdigit() else x.strip()
+                )
+            df["jockey_id"] = _norm_jid(df["jockey_id"])
+            jockey_filtered["jockey_id"] = _norm_jid(jockey_filtered["jockey_id"])
             df = df.merge(jockey_filtered, on="jockey_id", how="left")
         else:
             df["jockey_win_rate"] = np.nan
@@ -235,7 +241,15 @@ class FeatureEngineer:
         return df
 
     def _add_recent_form(self, df: pd.DataFrame) -> pd.DataFrame:
-        """各馬の直近 N 走着順平均・上がり3F 平均を付加。"""
+        """各馬の直近 N 走着順平均・上がり3F 平均を付加。
+
+        entry_df に既に両列が存在する場合（推論パスで事前スクレイプ済み）は
+        再計算をスキップする。
+        """
+        # 推論時: スクレイプで事前計算済みの値がある場合はそのまま返す
+        if "recent_avg_pos" in df.columns and "recent_avg_last3f" in df.columns:
+            return df
+
         h = self.history
         if h.empty:
             df["recent_avg_pos"] = np.nan
@@ -540,6 +554,10 @@ class FeatureEngineer:
             course_map = {0: "芝", 1: "ダート"}
             dist_map   = {0: "短距離", 1: "マイル", 2: "中距離", 3: "長距離"}
             tmp = df[jockey_cols].copy().dropna()
+            # jockey_id を正規化（先頭ゼロ除去）して文字列化
+            tmp["jockey_id"] = tmp["jockey_id"].astype(str).apply(
+                lambda x: str(int(x)) if x.strip().isdigit() else x.strip()
+            )
             tmp["course_type"]  = tmp["course_type_code"].map(course_map)
             tmp["distance_bin"] = tmp["distance_bin_code"].astype(int).map(dist_map)
             instance._jockey_course_stats = (
