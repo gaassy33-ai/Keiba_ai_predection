@@ -71,7 +71,13 @@ class RacePredictor:
         X = feature_df[FeatureEngineer.FEATURE_COLUMNS].copy()
         probs = self._trainer.model.predict(X)
 
-        result_df = feature_df[["horse_id", "horse_name", "horse_number", "frame_number"]].copy()
+        base_cols = ["horse_id", "horse_name", "horse_number", "frame_number"]
+        extra_cols = [
+            "jockey_name", "jockey_win_rate", "jockey_place_rate",
+            "recent_avg_pos", "recent_avg_last3f",
+        ]
+        cols = base_cols + [c for c in extra_cols if c in feature_df.columns]
+        result_df = feature_df[cols].copy()
         result_df["win_prob"] = probs
         result_df = result_df.sort_values("win_prob", ascending=False).reset_index(drop=True)
 

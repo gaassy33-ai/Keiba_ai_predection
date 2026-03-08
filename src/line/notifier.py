@@ -111,6 +111,17 @@ def _tag_badge(text: str, palette: dict) -> dict:
     }
 
 
+def _valid(v) -> bool:
+    """NaN / None / 空文字でなければ True。"""
+    if v is None or v == "":
+        return False
+    try:
+        import math
+        return not math.isnan(float(v))
+    except (TypeError, ValueError):
+        return True
+
+
 def _horse_card(horse: dict) -> dict:
     """1頭分の馬カードコンポーネントを生成する。"""
     mark = horse.get("mark", "◎")
@@ -121,10 +132,31 @@ def _horse_card(horse: dict) -> dict:
     prob = horse.get("win_prob", 0.0)
     tags: list[str] = horse.get("tags", [])
 
+    jockey_place_rate = horse.get("jockey_place_rate")
+    recent_avg_pos    = horse.get("recent_avg_pos")
+    recent_avg_last3f = horse.get("recent_avg_last3f")
+
     tag_badges = [
         _tag_badge(t, _TAG_PALETTES[i % len(_TAG_PALETTES)])
-        for i, t in enumerate(tags[:4])  # 最大4タグ
+        for i, t in enumerate(tags[:4])
     ]
+
+    # --- 騎手行: 名前 + 連対率 ---
+    jockey_label = f"騎手：{jockey}" if jockey else "騎手：---"
+    place_rate_label = (
+        f"連対率 {float(jockey_place_rate):.0%}"
+        if _valid(jockey_place_rate) else "連対率 ---"
+    )
+
+    # --- 成績行: 直近着順 + 上がり3F ---
+    avg_pos_label = (
+        f"直近 平均{float(recent_avg_pos):.1f}着"
+        if _valid(recent_avg_pos) else "直近 ---"
+    )
+    last3f_label = (
+        f"上がり {float(recent_avg_last3f):.1f}秒"
+        if _valid(recent_avg_last3f) else "上がり ---"
+    )
 
     return {
         "type": "box",
@@ -139,7 +171,6 @@ def _horse_card(horse: dict) -> dict:
                 "layout": "horizontal",
                 "alignItems": "center",
                 "contents": [
-                    # 印バッジ
                     {
                         "type": "box",
                         "layout": "vertical",
@@ -147,18 +178,9 @@ def _horse_card(horse: dict) -> dict:
                         "cornerRadius": "sm",
                         "width": "30px",
                         "height": "30px",
-                        "contents": [
-                            {
-                                "type": "text",
-                                "text": mark,
-                                "color": "#ffffff",
-                                "size": "sm",
-                                "align": "center",
-                                "gravity": "center",
-                            }
-                        ],
+                        "contents": [{"type": "text", "text": mark, "color": "#ffffff",
+                                      "size": "sm", "align": "center", "gravity": "center"}],
                     },
-                    # 馬番バッジ
                     {
                         "type": "box",
                         "layout": "vertical",
@@ -167,18 +189,9 @@ def _horse_card(horse: dict) -> dict:
                         "width": "26px",
                         "height": "26px",
                         "margin": "sm",
-                        "contents": [
-                            {
-                                "type": "text",
-                                "text": num,
-                                "color": "#ffffff",
-                                "size": "xs",
-                                "align": "center",
-                                "gravity": "center",
-                            }
-                        ],
+                        "contents": [{"type": "text", "text": num, "color": "#ffffff",
+                                      "size": "xs", "align": "center", "gravity": "center"}],
                     },
-                    # 馬名
                     {
                         "type": "text",
                         "text": name,
@@ -189,7 +202,6 @@ def _horse_card(horse: dict) -> dict:
                         "margin": "sm",
                         "wrap": True,
                     },
-                    # 予測勝率
                     {
                         "type": "text",
                         "text": f"{prob:.1%}",
@@ -200,13 +212,51 @@ def _horse_card(horse: dict) -> dict:
                     },
                 ],
             },
-            # --- 騎手 ---
+            # --- 騎手名 + 連対率 ---
             {
-                "type": "text",
-                "text": f"騎手：{jockey}" if jockey else "騎手：---",
-                "size": "xs",
-                "color": "#888888",
+                "type": "box",
+                "layout": "horizontal",
                 "margin": "xs",
+                "contents": [
+                    {
+                        "type": "text",
+                        "text": jockey_label,
+                        "size": "xs",
+                        "color": "#555555",
+                        "flex": 1,
+                    },
+                    {
+                        "type": "text",
+                        "text": place_rate_label,
+                        "size": "xs",
+                        "color": "#1565C0",
+                        "weight": "bold",
+                        "align": "end",
+                    },
+                ],
+            },
+            # --- 直近成績 + 上がり3F ---
+            {
+                "type": "box",
+                "layout": "horizontal",
+                "margin": "xs",
+                "contents": [
+                    {
+                        "type": "text",
+                        "text": avg_pos_label,
+                        "size": "xs",
+                        "color": "#555555",
+                        "flex": 1,
+                    },
+                    {
+                        "type": "text",
+                        "text": last3f_label,
+                        "size": "xs",
+                        "color": "#2E7D32",
+                        "weight": "bold",
+                        "align": "end",
+                    },
+                ],
             },
             # --- タグ行 ---
             *(
@@ -594,12 +644,15 @@ def _result_to_race_data(
         tags = _shap_text_to_tags(shap_text, horse.get("horse_name", ""))
         horses.append(
             {
-                "mark": mark_char,
-                "horse_number": horse.get("horse_number", "-"),
-                "horse_name": horse.get("horse_name", "---"),
-                "jockey_name": horse.get("jockey_name", ""),
-                "win_prob": horse.get("win_prob", 0.0),
-                "tags": tags,
+                "mark":              mark_char,
+                "horse_number":      horse.get("horse_number", "-"),
+                "horse_name":        horse.get("horse_name", "---"),
+                "jockey_name":       horse.get("jockey_name", ""),
+                "jockey_place_rate": horse.get("jockey_place_rate"),
+                "recent_avg_pos":    horse.get("recent_avg_pos"),
+                "recent_avg_last3f": horse.get("recent_avg_last3f"),
+                "win_prob":          horse.get("win_prob", 0.0),
+                "tags":              tags,
             }
         )
 
