@@ -493,9 +493,17 @@ class NetkeibaScraper:
             if len(tds) < 10:
                 continue
 
-            horse_link = tr.select_one("td.HorseName a")
-            jockey_link = tr.select_one("td.Jockey a")
-            trainer_link = tr.select_one("td.Trainer a")
+            # クラス名が変わっていてもhref属性でフォールバック
+            all_links = tr.select("a[href]")
+            horse_link = tr.select_one("td.HorseName a") or next(
+                (a for a in all_links if "/horse/" in a.get("href", "")), None
+            )
+            jockey_link = tr.select_one("td.Jockey a") or next(
+                (a for a in all_links if "/jockey/" in a.get("href", "")), None
+            )
+            trainer_link = tr.select_one("td.Trainer a") or next(
+                (a for a in all_links if "/trainer/" in a.get("href", "")), None
+            )
 
             waku_span   = tr.select_one("td.Waku span")
             umaban_td   = tr.select_one("td.Umaban")
@@ -517,6 +525,7 @@ class NetkeibaScraper:
                 trainer_name=trainer_link.get_text(strip=True) if trainer_link else "",
             ))
 
+        logger.info(f"出走馬 {len(entries)} 頭: {[e.horse_name for e in entries[:5]]}")
         return RaceInfo(
             race_id=race_id,
             race_name=race_name.get_text(strip=True) if race_name else "",
