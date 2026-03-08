@@ -265,6 +265,95 @@ def run_once_for_date(target_date: date) -> None:
             run_pipeline_for_race(race)
 
 
+def run_for_race_id(race_id: str) -> None:
+    """
+    CF Worker dispatch 用: 特定の race_id に対してパイプラインを即時実行する。
+
+    time-window チェックは行わず無条件に実行する（dispatch 側が時刻制御済み）。
+    race_schedule.json があれば race_name / start_time を補完する。
+    """
+    import json
+    from pathlib import Path
+
+    race: dict = {"race_id": race_id}
+
+    schedule_path = Path("docs/race_schedule.json")
+    if schedule_path.exists():
+        try:
+            schedule = json.loads(schedule_path.read_text(encoding="utf-8"))
+            for entry in schedule:
+                if entry.get("race_id") == race_id:
+                    race["race_name"] = entry.get("race_name", race_id)
+                    if entry.get("start_time"):
+                        race["start_time"] = datetime.fromisoformat(entry["start_time"])
+                    break
+        except Exception as e:
+            logger.warning(f"race_schedule.json 読み込み失敗: {e}")
+
+    logger.info(f"run_for_race_id: race_id={race_id} name={race.get('race_name', '?')}")
+    run_pipeline_for_race(race)
+
+
+def export_race_schedule(target_date: date | None = None) -> None:
+    """
+    当日のレーススケジュールを docs/race_schedule.json に書き出す。
+
+    CF Worker がこの JSON を fetch して20分前に dispatch を行う。
+    朝バッチ（--morning）の最後に呼ばれる想定。
+
+    出力形式:
+    [
+      {
+        "date": "YYYY-MM-DD",
+        "race_id": "202506010811",
+        "race_name": "春のステークス",
+        "race_number": 11,
+        "jyo_name": "東京",
+        "start_time": "2025-06-01T15:40:00",  // ISO8601 JST
+        "notify_at":  "2025-06-01T15:20:00"   // start_time - notify_before_minutes
+      },
+      ...
+    ]
+    """
+    import json
+    from pathlib import Path
+
+    if target_date is None:
+        target_date = date.today()
+
+    try:
+        with RaceScheduleFetcher() as fetcher:
+            all_races = fetcher.fetch_race_list(target_date)
+            races = fetcher.filter_by_jyo(all_races)
+        if not races:
+            races = all_races  # フォールバック: 全レース
+    except Exception as e:
+        logger.error(f"export_race_schedule: スケジュール取得失敗: {e}")
+        return
+
+    notify_delta = timedelta(minutes=settings.notify_before_minutes)
+    entries = []
+    for race in races:
+        notify_at = race["start_time"] - notify_delta
+        entries.append({
+            "date":         target_date.isoformat(),
+            "race_id":      race["race_id"],
+            "race_name":    race.get("race_name", ""),
+            "race_number":  race.get("race_number", 0),
+            "jyo_name":     race.get("jyo_name", ""),
+            "start_time":   race["start_time"].isoformat(),
+            "notify_at":    notify_at.isoformat(),
+        })
+
+    out_path = Path("docs/race_schedule.json")
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(
+        json.dumps(entries, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    logger.info(f"race_schedule.json: {len(entries)} 件 → {out_path}")
+
+
 def run_morning_pages() -> None:
     """
     朝7時に当日メインレース（最大R番号）の予想ページを生成する。

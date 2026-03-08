@@ -1,0 +1,36 @@
+# Cloudflare Workers 設定ファイル
+# デプロイ: wrangler deploy
+# ローカル実行: wrangler dev (HTTP テスト)
+# ローカル cron: wrangler dev --test-scheduled
+
+name        = "keiba-dispatcher"
+main        = "dispatcher.js"
+compatibility_date = "2024-01-01"
+
+# ── Cron トリガー: 毎分実行 ────────────────────────────────────────────
+[triggers]
+crons = ["* * * * *"]
+
+# ── KV Namespace バインディング ───────────────────────────────────────
+# 作成: wrangler kv namespace create DISPATCH_KV
+# 作成後、id に表示された値を貼り付ける
+[[kv_namespaces]]
+binding = "DISPATCH_KV"
+id      = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+
+# ── 環境変数（機密でない値）─────────────────────────────────────────
+[vars]
+GH_OWNER      = "gaassy33-ai"
+GH_REPO       = "Keiba_ai_predection"
+PAGES_BASE_URL = "https://gaassy33-ai.github.io/Keiba_ai_predection"
+
+# ── Secrets（wrangler secret put で設定・ここには書かない）─────────
+# wrangler secret put GH_TOKEN
+#   → GitHub PAT（スコープ: repo, workflow）
+
+# ── ローカル開発用（.dev.vars ファイルに書く）───────────────────────
+# .dev.vars（Git 管理外）に以下を記載:
+#   GH_TOKEN=ghp_xxxx
+#   GH_OWNER=gaassy33-ai
+#   GH_REPO=Keiba_ai_predection
+#   PAGES_BASE_URL=https://gaassy33-ai.github.io/Keiba_ai_predection

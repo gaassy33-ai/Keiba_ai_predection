@@ -2,14 +2,21 @@
 土日朝バッチ / 20分前通知 / 週末まとめレポートのエントリーポイント。
 
 用途:
-  --morning          朝5時バッチ: 開催日チェック → 予想ページ生成
-  --notify           20分前通知: 開催日チェック → レース通知パイプライン
-  --weekly-summary   日曜17時: 土日2日間のまとめ LINE 送信
+  --morning              朝5時バッチ: 開催日チェック → 予想ページ生成 → スケジュール JSON 書き出し
+  --notify               20分前通知（cron ポーリング方式）: 開催日チェック → 時間窓でレース通知
+  --notify-race RACE_ID  CF Worker dispatch 方式: 特定レースのみ即時通知（時間窓チェックなし）
+  --export-schedule      レーススケジュールを docs/race_schedule.json に書き出す（単独実行も可）
+  --weekly-summary       日曜17時: 土日2日間のまとめ LINE 送信
 
 GitHub Actions での早期終了（Early Exit）:
   --morning / --notify は先に is_jra_race_day() を呼び、
   非開催日の場合は sys.exit(0)（緑チェック）で即終了する。
   これにより Chrome セットアップ後のムダな処理を回避できる。
+
+Cloudflare Worker 連携:
+  --morning 実行後に docs/race_schedule.json が GitHub Pages に公開される。
+  CF Worker（毎分 cron）がこの JSON を読み、notify_at の60秒前後に
+  GitHub API 経由で keiba_dispatch.yml を発火する（--notify-race が受け取る）。
 
 開催日チェック実装:
   netkeiba のレースリストページに race_id が含まれるか urllib で確認。
@@ -206,15 +213,19 @@ def main() -> None:
     _setup_logger()
 
     parser = argparse.ArgumentParser(description="競馬 土日バッチ処理")
-    parser.add_argument("--morning",        action="store_true",
-                        help="朝バッチ: 開催日チェック → 予想ページ生成")
-    parser.add_argument("--notify",         action="store_true",
-                        help="20分前通知: 開催日チェック → レース通知パイプライン")
-    parser.add_argument("--weekly-summary", action="store_true",
+    parser.add_argument("--morning",         action="store_true",
+                        help="朝バッチ: 開催日チェック → 予想ページ生成 → スケジュールJSON書き出し")
+    parser.add_argument("--notify",          action="store_true",
+                        help="20分前通知（cron方式）: 開催日チェック → 時間窓でレース通知")
+    parser.add_argument("--notify-race",     metavar="RACE_ID",
+                        help="CF Worker dispatch方式: 指定 race_id を即時通知（時間窓チェックなし）")
+    parser.add_argument("--export-schedule", action="store_true",
+                        help="レーススケジュールを docs/race_schedule.json に書き出す")
+    parser.add_argument("--weekly-summary",  action="store_true",
                         help="週末まとめ: 土日2日間の成績をLINE送信")
     args = parser.parse_args()
 
-    # ── 開催日チェック（--weekly-summary は除く）──────────────────────
+    # ── 開催日チェック（--morning / --notify のみ）────────────────────
     if args.morning or args.notify:
         if not is_jra_race_day():
             logger.info("本日は JRA 非開催日です。処理を終了します。")
@@ -222,13 +233,30 @@ def main() -> None:
 
     if args.morning:
         logger.info("朝バッチ開始（予想ページ生成）")
-        from src.scheduler.runner import run_morning_pages
+        from src.scheduler.runner import run_morning_pages, export_race_schedule
         run_morning_pages()
+        # CF Worker 用にスケジュール JSON を GitHub Pages に書き出す
+        logger.info("レーススケジュール JSON エクスポート開始")
+        export_race_schedule(date.today())
 
     elif args.notify:
-        logger.info("20分前通知パイプライン開始")
+        logger.info("20分前通知パイプライン開始（cron方式）")
         from src.scheduler.runner import run_once_for_date
         run_once_for_date(date.today())
+
+    elif args.notify_race:
+        race_id = args.notify_race.strip()
+        if not race_id:
+            logger.error("--notify-race に race_id を指定してください")
+            sys.exit(1)
+        logger.info(f"CF Worker dispatch: race_id={race_id}")
+        from src.scheduler.runner import run_for_race_id
+        run_for_race_id(race_id)
+
+    elif args.export_schedule:
+        logger.info("スケジュール JSON エクスポート開始")
+        from src.scheduler.runner import export_race_schedule
+        export_race_schedule(date.today())
 
     elif args.weekly_summary:
         logger.info("週末まとめレポート送信開始")
