@@ -663,6 +663,12 @@ def _process_race_for_morning(
     strategies     = generate_betting_strategies(top_horses)
     best_bet_label = _make_bet_label(strategies)
 
+    # 信頼度スコア: 本命勝率の絶対値 × (本命 - 対抗) の差分
+    # → 本命が高確率かつ2番手との差が大きいほど高スコア
+    honmei_prob = float(result.honmei.get("win_prob", 0.0))
+    taikou_prob = float(result.taikou.get("win_prob", 0.0)) if result.taikou else 0.0
+    confidence_score = honmei_prob * (honmei_prob - taikou_prob)
+
     return {
         "race_id":          race_id,
         "race_number":      race.get("race_number", 0),
@@ -674,7 +680,9 @@ def _process_race_for_morning(
         "weather":          race_info.weather,
         "marks":            marks,
         "best_bet_label":   best_bet_label,
+        "confidence_score": confidence_score,
         "is_main":          False,  # 呼び出し元が上書き
+        "is_fire":          False,  # 呼び出し元が上書き
         "error":            None,
     }
 
@@ -785,11 +793,13 @@ def run_morning_all_races(target_date: date | None = None) -> None:
                     logger.warning(f"  [{jyo_name}] R{rnum} スキップ: {e}")
                     st = race.get("start_time")
                     races_results.append({
-                        "race_id":     race["race_id"],
-                        "race_number": race.get("race_number", 0),
-                        "start_time":  st.strftime("%H:%M") if st else "--:--",
-                        "is_main":     race["race_id"] == main_race_id,
-                        "error":       str(e),
+                        "race_id":          race["race_id"],
+                        "race_number":      race.get("race_number", 0),
+                        "start_time":       st.strftime("%H:%M") if st else "--:--",
+                        "is_main":          race["race_id"] == main_race_id,
+                        "is_fire":          False,
+                        "confidence_score": 0.0,
+                        "error":            str(e),
                     })
 
             success_count = sum(1 for r in races_results if not r.get("error"))
@@ -809,6 +819,26 @@ def run_morning_all_races(target_date: date | None = None) -> None:
             logger.info(
                 f"  [{jyo_name}] 完了: {success_count}/{len(jyo_races)} R 成功"
             )
+
+    # ── 3b. 全レース中から🔥勝負レースを1つ決定 ────────────────────
+    #   信頼度スコア = honmei_prob × (honmei_prob - taikou_prob)
+    #   最小条件: error なし かつ honmei_prob >= 0.20
+    all_race_flat = [
+        r for vd in venue_data_list for r in vd["races"]
+    ]
+    eligible = [
+        r for r in all_race_flat
+        if not r.get("error")
+        and (r.get("marks") or {}).get("honmei") is not None
+        and (r.get("marks", {}).get("honmei") or {}).get("win_prob", 0) >= 0.20
+    ]
+    if eligible:
+        fire_race = max(eligible, key=lambda r: r.get("confidence_score", 0.0))
+        fire_race["is_fire"] = True
+        logger.info(
+            f"🔥 勝負レース: R{fire_race['race_number']} {fire_race.get('race_name', '')} "
+            f"(score={fire_race.get('confidence_score', 0):.4f})"
+        )
 
     # ── 4. LINE カルーセル送信 ───────────────────────────────────────
     updated_at = datetime.now().strftime("%H:%M")

@@ -239,31 +239,36 @@ def _race_row(race: dict, row_index: int) -> dict:
         R#  |  発走  |  [2行: ◎本命 / ○▲☆△]  |  確率  |  買い目
     """
     is_main   = race.get("is_main", False)
+    is_fire   = race.get("is_fire", False)
     has_error = bool(race.get("error"))
 
     bg_color   = _MAIN_BG if is_main else (_ROW_ODD if row_index % 2 == 0 else _ROW_EVEN)
     r_color    = "#ff8f00" if is_main else "#777799"
     time_color = "#ffcc80" if is_main else "#888899"
-    padding_v  = "sm" if is_main else "xs"
+    padding_v  = "sm" if (is_main or is_fire) else "xs"
+
+    # 🔥レースは背景をわずかに明るく
+    if is_fire and not is_main:
+        bg_color = "#1a1200"
 
     # ── R番号列 ─────────────────────────────────────────
     rnum_text = f"{race.get('race_number', '?')}R"
+    r_badges: list[dict] = [
+        {"type": "text", "text": rnum_text, "size": "xs",
+         "color": "#ff8f00" if is_main else ("#ff6f00" if is_fire else r_color),
+         "weight": "bold" if (is_main or is_fire) else "regular"},
+    ]
+    if is_fire:
+        r_badges.append({"type": "text", "text": "🔥", "size": "xxs", "color": "#ff6f00"})
     if is_main:
-        r_col: dict = {
-            "type": "box",
-            "layout": "vertical",
-            "flex": 1,
-            "contents": [
-                {"type": "text", "text": rnum_text, "size": "xs",  "color": "#ff8f00", "weight": "bold"},
-                {"type": "text", "text": "★",        "size": "xxs", "color": "#ff8f00"},
-            ],
-        }
-    else:
-        r_col = {
-            "type": "text", "text": rnum_text,
-            "size": "xs", "color": r_color, "flex": 1,
-            "gravity": "center",
-        }
+        r_badges.append({"type": "text", "text": "★", "size": "xxs", "color": "#ff8f00"})
+
+    r_col: dict = {
+        "type": "box",
+        "layout": "vertical",
+        "flex": 1,
+        "contents": r_badges,
+    }
 
     # ── 発走時刻列 ──────────────────────────────────────
     t_col: dict = {
@@ -381,10 +386,13 @@ def _race_row(race: dict, row_index: int) -> dict:
         "contents": [r_col, t_col, marks_col, prob_col, bet_col],
     }
 
-    # メインレース行にゴールド枠線
+    # メインレース行: ゴールド枠線 / 🔥レース: オレンジ枠線
     if is_main:
         row["borderWidth"] = "2px"
         row["borderColor"] = _MAIN_BORDER
+    elif is_fire:
+        row["borderWidth"] = "2px"
+        row["borderColor"] = "#ff6f00"
 
     return row
 
