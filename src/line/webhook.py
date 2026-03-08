@@ -149,13 +149,10 @@ def _handle_main_race(reply_token: str) -> None:
             race_info = scraper.fetch_today_entries(race_id)
             pedigree_map: dict[str, dict] = {}
             recent_form_map: dict[str, dict] = {}
-            jockey_today_map: dict[str, dict | None] = {}
             for e in race_info.entries:
                 if e.horse_id:
                     pedigree_map[e.horse_id] = scraper.fetch_horse_pedigree(e.horse_id)
                     recent_form_map[e.horse_id] = scraper.fetch_horse_recent_form(e.horse_id)
-                if e.jockey_id:
-                    jockey_today_map[e.jockey_id] = scraper.fetch_jockey_today_results(e.jockey_id)
 
         entry_records = []
         for e in race_info.entries:
@@ -225,9 +222,8 @@ def _handle_main_race(reply_token: str) -> None:
             "horses": [
                 {
                     **h,
-                    "mark":         marks[i] if i < len(marks) else "▲",
-                    "tags":         [],
-                    "jockey_today": jockey_today_map.get(h.get("jockey_id", ""), None),
+                    "mark": marks[i] if i < len(marks) else "▲",
+                    "tags": [],
                 }
                 for i, h in enumerate(top_horses)
             ],

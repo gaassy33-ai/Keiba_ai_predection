@@ -20,7 +20,7 @@ jobs:
   notify:
     name: 予想 & LINE 送信 & Pages 更新
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     permissions:
       contents: write
 

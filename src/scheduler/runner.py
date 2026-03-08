@@ -74,16 +74,13 @@ def run_pipeline_for_race(race: dict) -> None:
         with NetkeibaScraper() as scraper:
             race_info = scraper.fetch_today_entries(race_id)
 
-            # 3. 血統情報・直近成績・騎手当日成績を付加
+            # 3. 血統情報・直近成績を付加
             pedigree_map: dict[str, dict] = {}
             recent_form_map: dict[str, dict] = {}
-            jockey_today_map: dict[str, dict | None] = {}
             for entry in race_info.entries:
                 if entry.horse_id:
                     pedigree_map[entry.horse_id] = scraper.fetch_horse_pedigree(entry.horse_id)
                     recent_form_map[entry.horse_id] = scraper.fetch_horse_recent_form(entry.horse_id)
-                if entry.jockey_id:
-                    jockey_today_map[entry.jockey_id] = scraper.fetch_jockey_today_results(entry.jockey_id)
 
         # 4. entry_df を組み立て
         import pandas as pd
@@ -135,12 +132,6 @@ def run_pipeline_for_race(race: dict) -> None:
         from datetime import timedelta
         start_time = race.get("start_time")
         deadline = (start_time - timedelta(minutes=2)).strftime("%H:%M") if start_time else ""
-
-        # 騎手当日成績を result の horse dict に付加
-        for horse_dict in [result.honmei, result.taikou, result.ana]:
-            if horse_dict:
-                jid = horse_dict.get("jockey_id", "")
-                horse_dict["jockey_today"] = jockey_today_map.get(jid)
 
         notifier.send_prediction(
             result=result,
@@ -327,13 +318,10 @@ def run_morning_pages() -> None:
             race_info = scraper.fetch_today_entries(race_id)
             pedigree_map: dict[str, dict] = {}
             recent_form_map: dict[str, dict] = {}
-            jockey_today_map: dict[str, dict | None] = {}
             for entry in race_info.entries:
                 if entry.horse_id:
                     pedigree_map[entry.horse_id] = scraper.fetch_horse_pedigree(entry.horse_id)
                     recent_form_map[entry.horse_id] = scraper.fetch_horse_recent_form(entry.horse_id)
-                if entry.jockey_id:
-                    jockey_today_map[entry.jockey_id] = scraper.fetch_jockey_today_results(entry.jockey_id)
 
         entry_records = []
         for e in race_info.entries:
@@ -372,12 +360,6 @@ def run_morning_pages() -> None:
         trainer   = ModelTrainer.load()
         explainer = PredictionExplainer(trainer)
         shap_text = explainer.explain_text(result, feature_df) if settings.enable_shap else ""
-
-        # 騎手当日成績を result の horse dict に付加
-        for horse_dict in [result.honmei, result.taikou, result.ana]:
-            if horse_dict:
-                jid = horse_dict.get("jockey_id", "")
-                horse_dict["jockey_today"] = jockey_today_map.get(jid)
 
         race_data = _result_to_race_data(
             result=result,

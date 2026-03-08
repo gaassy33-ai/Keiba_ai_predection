@@ -590,7 +590,6 @@ def _result_to_race_data(
                 "horse_number":      horse.get("horse_number", "-"),
                 "horse_name":        horse.get("horse_name", "---"),
                 "jockey_name":       horse.get("jockey_name", ""),
-                "jockey_today":   horse.get("jockey_today"),
                 "recent_avg_pos": horse.get("recent_avg_pos"),
                 "win_prob":       horse.get("win_prob", 0.0),
                 "tags":              tags,
