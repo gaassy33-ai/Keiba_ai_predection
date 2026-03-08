@@ -454,18 +454,25 @@ class NetkeibaScraper:
 
         # ヘッダーから着順・上がり列のインデックスを動的取得
         header_row = table.select_one("tr")
-        headers = [th.get_text(strip=True) for th in header_row.select("th")] if header_row else []
+        headers = []
+        if header_row:
+            ths = header_row.select("th")
+            if ths:
+                headers = [th.get_text(strip=True) for th in ths]
+            else:
+                # th がない場合は td をヘッダー行として扱う
+                headers = [td.get_text(strip=True) for td in header_row.select("td")]
         pos_idx, last3f_idx = None, None
         for i, h in enumerate(headers):
             if h == "着順":
                 pos_idx = i
             elif "上がり" in h:
                 last3f_idx = i
-        # フォールバック: 典型的な列配置
+        # フォールバック: 典型的な列配置（db_h_race_results テーブルの一般的な構造）
         if pos_idx is None:
             pos_idx = 11
         if last3f_idx is None:
-            last3f_idx = 18
+            last3f_idx = 17
 
         positions: list[float] = []
         last3fs: list[float] = []

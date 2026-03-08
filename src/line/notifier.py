@@ -127,6 +127,8 @@ def _horse_card(horse: dict) -> dict:
     mark = horse.get("mark", "◎")
     style = _MARK_STYLES.get(mark, _MARK_STYLES["◎"])
     num = str(horse.get("horse_number", "-"))
+    frame = horse.get("frame_number", "")
+    frame_label = str(int(frame)) if frame and str(frame).isdigit() else str(frame) if frame else "-"
     name = horse.get("horse_name", "---")
     jockey = horse.get("jockey_name", "")
     prob = horse.get("win_prob", 0.0)
@@ -184,11 +186,22 @@ def _horse_card(horse: dict) -> dict:
                     {
                         "type": "box",
                         "layout": "vertical",
+                        "backgroundColor": "#5D4037",
+                        "cornerRadius": "sm",
+                        "width": "24px",
+                        "height": "24px",
+                        "margin": "sm",
+                        "contents": [{"type": "text", "text": frame_label, "color": "#ffffff",
+                                      "size": "xs", "align": "center", "gravity": "center"}],
+                    },
+                    {
+                        "type": "box",
+                        "layout": "vertical",
                         "backgroundColor": "#1a237e",
                         "cornerRadius": "sm",
                         "width": "26px",
                         "height": "26px",
-                        "margin": "sm",
+                        "margin": "xs",
                         "contents": [{"type": "text", "text": num, "color": "#ffffff",
                                       "size": "xs", "align": "center", "gravity": "center"}],
                     },
@@ -648,6 +661,7 @@ def _result_to_race_data(
         horses.append(
             {
                 "mark":              mark_char,
+                "frame_number":      horse.get("frame_number", ""),
                 "horse_number":      horse.get("horse_number", "-"),
                 "horse_name":        horse.get("horse_name", "---"),
                 "jockey_name":       horse.get("jockey_name", ""),

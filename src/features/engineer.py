@@ -553,22 +553,36 @@ class FeatureEngineer:
         if all(c in df.columns for c in jockey_cols):
             course_map = {0: "芝", 1: "ダート"}
             dist_map   = {0: "短距離", 1: "マイル", 2: "中距離", 3: "長距離"}
-            tmp = df[jockey_cols].copy().dropna()
+            # race_id があれば時系列順にソートして最後の観測値を使う（初期の少ないデータで
+            # 計算された低い数値に引っ張られることなく、成熟した安定したレートを取得）
+            cols_to_select = jockey_cols + (["race_id"] if "race_id" in df.columns else [])
+            tmp = df[cols_to_select].copy().dropna(subset=jockey_cols)
             # jockey_id を正規化（先頭ゼロ除去）して文字列化
             tmp["jockey_id"] = tmp["jockey_id"].astype(str).apply(
                 lambda x: str(int(x)) if x.strip().isdigit() else x.strip()
             )
             tmp["course_type"]  = tmp["course_type_code"].map(course_map)
             tmp["distance_bin"] = tmp["distance_bin_code"].astype(int).map(dist_map)
-            instance._jockey_course_stats = (
-                tmp.groupby(["jockey_id", "course_type", "distance_bin"])
-                .agg(
-                    jockey_win_rate=("jockey_win_rate", "mean"),
-                    jockey_place_rate=("jockey_place_rate", "mean"),
-                    jockey_runs=("jockey_runs", "mean"),
+            if "race_id" in tmp.columns:
+                # 最新レースの観測値を使用（ルックバック計算が最も成熟している）
+                tmp = tmp.sort_values("race_id")
+                instance._jockey_course_stats = (
+                    tmp.groupby(["jockey_id", "course_type", "distance_bin"])
+                    .last()
+                    .reset_index()
+                    [["jockey_id", "course_type", "distance_bin",
+                      "jockey_win_rate", "jockey_place_rate", "jockey_runs"]]
                 )
-                .reset_index()
-            )
+            else:
+                instance._jockey_course_stats = (
+                    tmp.groupby(["jockey_id", "course_type", "distance_bin"])
+                    .agg(
+                        jockey_win_rate=("jockey_win_rate", "mean"),
+                        jockey_place_rate=("jockey_place_rate", "mean"),
+                        jockey_runs=("jockey_runs", "mean"),
+                    )
+                    .reset_index()
+                )
             logger.info(f"jockey_course_stats: {len(instance._jockey_course_stats)} entries")
 
         instance.save_stats(stats_path)
