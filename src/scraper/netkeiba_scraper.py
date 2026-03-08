@@ -106,6 +106,8 @@ class NetkeibaScraper:
             opts.add_argument("--no-sandbox")
             opts.add_argument("--disable-dev-shm-usage")
             opts.add_argument(f"--user-agent={settings.user_agent}")
+            # DOMContentLoaded で制御を返す（全リソース待ちによるタイムアウトを防ぐ）
+            opts.page_load_strategy = "eager"
 
             service = (
                 Service(settings.chromedriver_path)
@@ -113,6 +115,7 @@ class NetkeibaScraper:
                 else Service(ChromeDriverManager().install())
             )
             self._driver = webdriver.Chrome(service=service, options=opts)
+            self._driver.set_page_load_timeout(60)
         return self._driver
 
     def close(self) -> None:
@@ -459,9 +462,18 @@ class NetkeibaScraper:
         logger.info(f"Fetching today entries via Selenium: {url}")
 
         driver = self._get_driver()
-        driver.get(url)
-        wait = WebDriverWait(driver, 15)
-        wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "table.Shutuba_Table")))
+        try:
+            driver.get(url)
+        except Exception as e:
+            # page_load_timeout 超過など: DOMが部分的に読み込まれていれば続行
+            logger.warning(f"driver.get() raised (will try to parse partial DOM): {e}")
+
+        try:
+            WebDriverWait(driver, 20).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "table.Shutuba_Table"))
+            )
+        except Exception:
+            logger.warning("Shutuba_Table が見つかりません — ページソースをそのまま解析します")
 
         soup = BeautifulSoup(driver.page_source, "lxml")
 

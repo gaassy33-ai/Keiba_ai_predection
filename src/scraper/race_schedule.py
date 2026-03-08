@@ -71,12 +71,15 @@ class RaceScheduleFetcher:
             opts.add_argument("--no-sandbox")
             opts.add_argument("--disable-dev-shm-usage")
             opts.add_argument(f"--user-agent={settings.user_agent}")
+            # DOMContentLoaded で制御を返す（全リソース待ちによるタイムアウトを防ぐ）
+            opts.page_load_strategy = "eager"
             service = (
                 Service(settings.chromedriver_path)
                 if settings.chromedriver_path
                 else Service(ChromeDriverManager().install())
             )
             self._driver = webdriver.Chrome(service=service, options=opts)
+            self._driver.set_page_load_timeout(60)
         return self._driver
 
     def close(self) -> None:
