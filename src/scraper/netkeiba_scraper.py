@@ -449,7 +449,7 @@ class NetkeibaScraper:
         # テーブルを探す
         table = soup.select_one("table.db_h_race_results, table.race_table_01")
         if table is None:
-            logger.debug(f"No result table for horse_id={horse_id}")
+            logger.info(f"No result table for horse_id={horse_id}")
             return {"recent_avg_pos": float("nan"), "recent_avg_last3f": float("nan")}
 
         # ヘッダーから着順・上がり列のインデックスを動的取得
@@ -460,33 +460,48 @@ class NetkeibaScraper:
             if ths:
                 headers = [th.get_text(strip=True) for th in ths]
             else:
-                # th がない場合は td をヘッダー行として扱う
                 headers = [td.get_text(strip=True) for td in header_row.select("td")]
+        logger.info(f"horse {horse_id} table headers: {headers}")
+
         pos_idx, last3f_idx = None, None
         for i, h in enumerate(headers):
-            if h == "着順":
+            if "着順" in h:
                 pos_idx = i
             elif "上がり" in h:
                 last3f_idx = i
-        # フォールバック: 典型的な列配置（db_h_race_results テーブルの一般的な構造）
+        # フォールバック: 典型的な列配置（db_h_race_results）
+        # 日付/開催/天気/R/レース名/映像/頭数/枠番/馬番/オッズ/人気/着順 → index=11
         if pos_idx is None:
             pos_idx = 11
         if last3f_idx is None:
             last3f_idx = 17
+        logger.info(f"horse {horse_id}: pos_idx={pos_idx}, last3f_idx={last3f_idx}")
+
+        def _parse_pos(text: str) -> int | None:
+            """着順テキストから数値を抽出（"1着", "1", "除外" など対応）"""
+            m = re.match(r'^(\d+)', text.strip())
+            if m:
+                v = int(m.group(1))
+                return v if 1 <= v <= 18 else None
+            return None
 
         positions: list[float] = []
         last3fs: list[float] = []
-        for tr in table.select("tr")[1: n + 1]:
+        # table.select("tr")[1:] でデータ行を取得（thead/tbody 混在にも対応）
+        data_rows = [tr for tr in table.select("tr") if tr.select("td")]
+        for tr in data_rows[:n]:
             tds = tr.select("td")
-            if not tds:
-                continue
-            if pos_idx < len(tds):
-                try:
-                    val = int(tds[pos_idx].get_text(strip=True))
-                    if 1 <= val <= 18:
-                        positions.append(val)
-                except (ValueError, TypeError):
-                    pass
+            # 着順: pos_idx 優先、ずれ補正として ±1 も試みる
+            pos_val = None
+            for try_idx in [pos_idx, pos_idx - 1, pos_idx + 1]:
+                if 0 <= try_idx < len(tds):
+                    pos_val = _parse_pos(tds[try_idx].get_text(strip=True))
+                    if pos_val is not None:
+                        break
+            if pos_val is not None:
+                positions.append(pos_val)
+
+            # 上がり3F
             if last3f_idx < len(tds):
                 try:
                     val = float(tds[last3f_idx].get_text(strip=True))
@@ -495,6 +510,9 @@ class NetkeibaScraper:
                 except (ValueError, TypeError):
                     pass
 
+        logger.info(
+            f"horse {horse_id}: positions={positions}, last3fs={last3fs}"
+        )
         return {
             "recent_avg_pos": float(_np.mean(positions)) if positions else float("nan"),
             "recent_avg_last3f": float(_np.mean(last3fs)) if last3fs else float("nan"),
@@ -510,12 +528,13 @@ class NetkeibaScraper:
             {"races": int, "wins": int}
             データ取得失敗時は None を返す。
         """
-        from datetime import date as _date
+        from datetime import date as _date, datetime as _dt
         if target_date is None:
             target_date = _date.today()
 
-        url = f"{self.BASE_URL}/jockey/result/recent/{jockey_id}/"
-        logger.debug(f"Fetching jockey today results: {url}")
+        # db.netkeiba.com の騎手成績ページ（/recent/ は不要）
+        url = f"{self.BASE_URL}/jockey/result/{jockey_id}/"
+        logger.info(f"Fetching jockey today results: {url}")
         try:
             soup = self._get(url)
         except Exception as e:
@@ -524,59 +543,62 @@ class NetkeibaScraper:
 
         table = soup.select_one("table.race_table_01, table.db_h_race_results")
         if table is None:
+            logger.warning(f"Jockey result table not found for {jockey_id}")
             return None
+
+        # ヘッダーから日付列・着順列のインデックスを動的取得
+        header_row = table.select_one("tr")
+        headers = []
+        if header_row:
+            ths = header_row.select("th")
+            headers = [th.get_text(strip=True) for th in ths] if ths else [
+                td.get_text(strip=True) for td in header_row.select("td")
+            ]
+        logger.info(f"jockey {jockey_id} table headers: {headers}")
+
+        date_idx, pos_idx = 0, None  # 日付は通常 index 0
+        for i, h in enumerate(headers):
+            if "日付" in h or "年月日" in h:
+                date_idx = i
+            elif "着順" in h:
+                pos_idx = i
+        if pos_idx is None:
+            # 典型的な騎手成績テーブル: 日付/開催/R/レース名/馬名/斤量/コース/着順...
+            pos_idx = 7
+        logger.info(f"jockey {jockey_id}: date_idx={date_idx}, pos_idx={pos_idx}")
 
         races = 0
         wins = 0
-
-        for tr in table.select("tr")[1:]:
+        data_rows = [tr for tr in table.select("tr") if tr.select("td")]
+        for tr in data_rows:
             tds = tr.select("td")
-            if not tds:
+            if len(tds) <= max(date_idx, pos_idx):
                 continue
-            # 日付列（0番目）
-            date_text = tds[0].get_text(strip=True)
-            try:
-                from datetime import datetime as _dt
-                row_date = _dt.strptime(date_text, "%Y/%m/%d").date()
-            except ValueError:
+            # 日付パース
+            date_text = tds[date_idx].get_text(strip=True)
+            row_date = None
+            for fmt in ("%Y/%m/%d", "%Y年%m月%d日", "%Y.%m.%d"):
                 try:
-                    row_date = _dt.strptime(date_text, "%Y年%m月%d日").date()
-                except ValueError:
-                    continue
-
-            if row_date != target_date:
-                if races > 0:
-                    # 日付が今日以前になったら終了
+                    row_date = _dt.strptime(date_text, fmt).date()
                     break
+                except ValueError:
+                    pass
+            if row_date is None:
+                continue
+            if row_date != target_date:
                 continue
 
-            # 着順列を探す（ヘッダー検出またはインデックス推定）
-            # 典型的なjockey result tableは 着順が10-11列目あたり
-            pos_val = None
-            for idx in range(min(len(tds), 15), 4, -1):
-                try:
-                    v = int(tds[idx].get_text(strip=True))
-                    if 1 <= v <= 18:
-                        pos_val = v
-                        break
-                except (ValueError, IndexError):
-                    pass
-            if pos_val is None:
-                # フォールバック: 5番目以降で最初の1-18の数値
-                for td in tds[5:]:
-                    try:
-                        v = int(td.get_text(strip=True))
-                        if 1 <= v <= 18:
-                            pos_val = v
-                            break
-                    except (ValueError, TypeError):
-                        pass
+            # 着順パース（"1", "1着", "除" など）
+            pos_text = tds[pos_idx].get_text(strip=True)
+            m = re.match(r'^(\d+)', pos_text)
+            if m:
+                pos_val = int(m.group(1))
+                if 1 <= pos_val <= 18:
+                    races += 1
+                    if pos_val == 1:
+                        wins += 1
 
-            if pos_val is not None:
-                races += 1
-                if pos_val == 1:
-                    wins += 1
-
+        logger.info(f"jockey {jockey_id} today: races={races}, wins={wins}")
         return {"races": races, "wins": wins}
 
     def fetch_bulk_race_meta(self, race_ids: list[str]) -> pd.DataFrame:

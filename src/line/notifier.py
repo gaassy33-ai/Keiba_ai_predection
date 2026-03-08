@@ -139,8 +139,7 @@ def _horse_card(horse: dict) -> dict:
     prob = horse.get("win_prob", 0.0)
     tags: list[str] = horse.get("tags", [])
 
-    recent_avg_pos    = horse.get("recent_avg_pos")
-    recent_avg_last3f = horse.get("recent_avg_last3f")
+    recent_avg_pos = horse.get("recent_avg_pos")
 
     # 騎手当日成績
     jockey_today = horse.get("jockey_today")  # {"races": int, "wins": int} | None | str
@@ -161,14 +160,10 @@ def _horse_card(horse: dict) -> dict:
     # --- 騎手行 ---
     jockey_label = f"騎手：{jockey}" if jockey else "騎手：---"
 
-    # --- 成績行: 直近着順 + 上がり3F ---
+    # --- 成績行: 直近着順 ---
     avg_pos_label = (
         f"直近 平均{float(recent_avg_pos):.1f}着"
         if _valid(recent_avg_pos) else "直近 ---"
-    )
-    last3f_label = (
-        f"上がり {float(recent_avg_last3f):.1f}秒"
-        if _valid(recent_avg_last3f) else "上がり ---"
     )
 
     return {
@@ -259,28 +254,13 @@ def _horse_card(horse: dict) -> dict:
                     },
                 ],
             },
-            # --- 直近成績 + 上がり3F ---
+            # --- 直近成績 ---
             {
-                "type": "box",
-                "layout": "horizontal",
+                "type": "text",
+                "text": avg_pos_label,
+                "size": "xs",
+                "color": "#555555",
                 "margin": "xs",
-                "contents": [
-                    {
-                        "type": "text",
-                        "text": avg_pos_label,
-                        "size": "xs",
-                        "color": "#555555",
-                        "flex": 1,
-                    },
-                    {
-                        "type": "text",
-                        "text": last3f_label,
-                        "size": "xs",
-                        "color": "#2E7D32",
-                        "weight": "bold",
-                        "align": "end",
-                    },
-                ],
             },
             # --- タグ行 ---
             *(
@@ -676,10 +656,9 @@ def _result_to_race_data(
                 "horse_number":      horse.get("horse_number", "-"),
                 "horse_name":        horse.get("horse_name", "---"),
                 "jockey_name":       horse.get("jockey_name", ""),
-                "jockey_today":      horse.get("jockey_today"),
-                "recent_avg_pos":    horse.get("recent_avg_pos"),
-                "recent_avg_last3f": horse.get("recent_avg_last3f"),
-                "win_prob":          horse.get("win_prob", 0.0),
+                "jockey_today":   horse.get("jockey_today"),
+                "recent_avg_pos": horse.get("recent_avg_pos"),
+                "win_prob":       horse.get("win_prob", 0.0),
                 "tags":              tags,
             }
         )
