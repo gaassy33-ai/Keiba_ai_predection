@@ -208,19 +208,48 @@ def run_once_for_date(target_date: date) -> None:
     """
     GitHub Actions から呼び出す用。
     当日のレース全てに対して即時実行する（発走前のみ）。
+
+    判定ロジック:
+      notify_at = start_time - notify_before_minutes
+      -15 ≤ now - notify_at ≤ 20 のレースを通知する。
+      ※ now は Selenium 呼び出し前に取得（Selenium遅延の影響を除去）
+      ※ GitHub Actions の起動遅延 (最大15分) + Workflow実行時間を考慮して±15+αを設定
     """
-    with RaceScheduleFetcher() as fetcher:
-        races = fetcher.fetch_race_list(target_date)
-        races = fetcher.filter_by_jyo(races)
+    # Selenium 呼び出し前に現在時刻を取得（ドリフト防止）
+    now = datetime.now()
+    logger.info(f"run_once_for_date: now={now.strftime('%H:%M:%S')}")
+
+    try:
+        with RaceScheduleFetcher() as fetcher:
+            races = fetcher.fetch_race_list(target_date)
+            races = fetcher.filter_by_jyo(races)
+    except Exception as e:
+        logger.error(f"スケジュール取得失敗: {e}")
+        try:
+            LineNotifier().send_text(f"⚠️ レーススケジュール取得エラー:\n{type(e).__name__}: {e}")
+        except Exception:
+            pass
+        return
 
     notify_delta = timedelta(minutes=settings.notify_before_minutes)
-    now = datetime.now()
+    # GitHub Actions の起動遅延(最大15分) + Selenium時間(~1分) を考慮したウィンドウ
+    #  -5分: 理想より少し早いクーロン実行を許容（二重送信防止のため小さく）
+    # +20分: 理想より20分遅い実行(起動遅延15分 + 処理5分)を許容
+    early_margin  = timedelta(minutes=5)
+    late_margin   = timedelta(minutes=20)
 
     for race in races:
         notify_at = race["start_time"] - notify_delta
-        # GitHub Actions は 20 分おきに起動するため、±10 分ウィンドウで判定
-        window = timedelta(minutes=10)
-        if abs(now - notify_at) <= window:
+        delta = now - notify_at  # 正 = 通知タイミング過ぎ、負 = まだ早い
+        in_window = -early_margin <= delta <= late_margin
+        logger.info(
+            f"  {race['race_name'][:8]} R{race['race_number']} "
+            f"start={race['start_time'].strftime('%H:%M')} "
+            f"notify_at={notify_at.strftime('%H:%M')} "
+            f"delta={int(delta.total_seconds()//60):+d}min "
+            f"{'→ NOTIFY' if in_window else ''}"
+        )
+        if in_window:
             run_pipeline_for_race(race)
 
 

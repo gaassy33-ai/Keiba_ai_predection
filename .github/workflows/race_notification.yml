@@ -1,14 +1,9 @@
 name: Race Notification (20-min before)
+# このワークフローは keiba_notify.yml に統合されました。
+# スケジュール実行は keiba_notify.yml が担当します。
+# 手動実行（テスト用）のみ残します。
 
 on:
-  # 競馬開催日（土日）の 8:00 〜 17:00 JST を 20 分おきに実行
-  # UTC = JST - 9h。8:00 JST = 23:00 UTC (前日)、17:00 JST = 08:00 UTC
-  schedule:
-    - cron: "0,20,40 23-23 * * 5"   # 金 23:00-23:40 UTC = 土 8:00-8:40 JST
-    - cron: "0,20,40 0-8 * * 6"     # 土 00:00-08:40 UTC = 土 9:00-17:40 JST
-    - cron: "0,20,40 23-23 * * 6"   # 土 23:00-23:40 UTC = 日 8:00-8:40 JST
-    - cron: "0,20,40 0-8 * * 0"     # 日 00:00-08:40 UTC = 日 9:00-17:40 JST
-  # 手動実行
   workflow_dispatch:
     inputs:
       target_race_id:
@@ -18,9 +13,11 @@ on:
 
 jobs:
   notify:
-    name: Run prediction pipeline
+    name: Run prediction pipeline (manual)
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout
@@ -36,6 +33,7 @@ jobs:
         run: pip install -e ".[dev]"
 
       - name: Install Chrome & ChromeDriver
+        id: setup-chrome
         uses: browser-actions/setup-chrome@v1
 
       - name: Run notification pipeline
@@ -47,12 +45,22 @@ jobs:
           NETKEIBA_PASSWORD: ${{ secrets.NETKEIBA_PASSWORD }}
           SELENIUM_HEADLESS: "true"
           TZ: "Asia/Tokyo"
+          CHROMEDRIVER_PATH: ${{ steps.setup-chrome.outputs.chromedriver-path }}
+        run: python -m src.scheduler.runner --once
+
+      - name: Commit & push updated Pages
+        if: always()
         run: |
-          python -m src.scheduler.runner --once
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/
+          git diff --cached --quiet || git commit -m "chore: update GitHub Pages [skip ci]"
+          git push || true
 
       - name: Upload logs on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: logs
+          name: logs-${{ github.run_id }}
           path: logs/
+          retention-days: 7
