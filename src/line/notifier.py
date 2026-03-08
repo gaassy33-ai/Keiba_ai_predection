@@ -203,7 +203,7 @@ def _horse_card(horse: dict) -> dict:
             # --- 騎手 ---
             {
                 "type": "text",
-                "text": f"騎手：{jockey}" if jockey else "",
+                "text": f"騎手：{jockey}" if jockey else "騎手：---",
                 "size": "xs",
                 "color": "#888888",
                 "margin": "xs",
@@ -366,8 +366,8 @@ def create_prediction_message(race_data: dict) -> dict:
     horses: list[dict] = race_data.get("horses", [])
 
     header_bg = _header_color(grade)
-    course_label = f"{course_type} {distance}m" if distance else course_type
-    weather_label = f"{'☀' if weather == '晴' else '☁' if '曇' in weather else '🌧' if '雨' in weather else ''} {weather} / {ground_condition}".strip()
+    course_label = (f"{course_type} {distance}m" if distance else course_type) or "---"
+    weather_label = f"{'☀' if weather == '晴' else '☁' if '曇' in weather else '🌧' if '雨' in weather else ''} {weather} / {ground_condition}".strip() or "---"
 
     netkeiba_url = (
         f"https://race.netkeiba.com/race/shutuba.html?race_id={race_id}"
