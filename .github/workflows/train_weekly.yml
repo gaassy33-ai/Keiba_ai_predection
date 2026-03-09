@@ -11,13 +11,15 @@ jobs:
     name: データ収集 & 再学習 & モデル push
     runs-on: ubuntu-latest
     timeout-minutes: 360   # 最大 6 時間（データ収集を含む）
+    permissions:
+      contents: write       # モデルファイルの commit & push に必要
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # モデルファイルを push するために書き込みトークンが必要
-          token: ${{ secrets.GH_PAT }}
+          # GH_PAT 不要: GITHUB_TOKEN（自動生成）で同一リポジトリへ push 可能
+          token: ${{ github.token }}
 
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
