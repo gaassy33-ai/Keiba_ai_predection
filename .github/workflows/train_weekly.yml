@@ -40,17 +40,20 @@ jobs:
           SELENIUM_HEADLESS: "true"
           TZ: "Asia/Tokyo"
         run: |
-          # 過去 12 ヶ月のデータを収集（既存チェックポイントがあればスキップ）
-          YEAR=$(date -d '1 year ago' +%Y)
+          # 過去 12 ヶ月のデータを収集（race_id は data/raw/race_ids.csv へ保存・再開可能）
+          START_DATE=$(date -d '1 year ago' +'%Y-%m-%d')
           python -m src.collect \
-            --start ${YEAR}-01-01 \
+            --start "${START_DATE}" \
             --jyo 05,06,08,09 \
-            --checkpoint-prefix data/raw/checkpoint
+            --ids-file data/raw/race_ids.csv \
+            --output data/processed/training.csv
 
       - name: モデル再学習
         env:
           TZ: "Asia/Tokyo"
-        run: python -m src.model.trainer
+        run: |
+          python -m src.model.trainer \
+            --input data/processed/training.csv
 
       - name: モデルをリポジトリに commit & push
         run: |

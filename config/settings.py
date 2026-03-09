@@ -20,11 +20,11 @@ class Settings(BaseSettings):
     )
 
     # ------------------------------------------------------------------
-    # LINE Messaging API
+    # LINE Messaging API（送信時のみ必須。データ収集・学習では不要）
     # ------------------------------------------------------------------
-    line_channel_access_token: str
-    line_channel_secret: str
-    line_target_user_id: str
+    line_channel_access_token: str = ""
+    line_channel_secret: str = ""
+    line_target_user_id: str = ""
 
     # ------------------------------------------------------------------
     # netkeiba 認証
