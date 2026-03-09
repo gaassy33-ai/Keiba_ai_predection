@@ -9,6 +9,7 @@ import re
 import time
 from dataclasses import dataclass, field
 from datetime import date, datetime
+from pathlib import Path
 from typing import Optional
 
 import pandas as pd
@@ -407,12 +408,14 @@ class NetkeibaScraper:
 
             # 年ごとに途中保存
             if save_path:
+                Path(save_path).parent.mkdir(parents=True, exist_ok=True)
                 pd.DataFrame(sorted(collected), columns=["race_id"]).to_csv(
                     save_path, index=False
                 )
 
         result = sorted(collected)
         if save_path:
+            Path(save_path).parent.mkdir(parents=True, exist_ok=True)
             pd.DataFrame(result, columns=["race_id"]).to_csv(save_path, index=False)
             logger.info(f"Saved {len(result)} race_ids → {save_path}")
 
@@ -892,6 +895,192 @@ class NetkeibaScraper:
                 })
 
         return pd.DataFrame(rows), meta
+
+    # ------------------------------------------------------------------
+    # 払戻情報の取得
+    # ------------------------------------------------------------------
+
+    def fetch_race_payouts(self, race_id: str) -> dict[str, list[dict]]:
+        """
+        指定 race_id の払戻情報を取得する。
+
+        Parameters
+        ----------
+        race_id : str
+            ネット競馬の race_id
+
+        Returns
+        -------
+        dict[str, list[dict]]
+            例: {
+              "単勝": [{"horses": ["7"], "payout": 450}],
+              "複勝": [{"horses": ["7"], "payout": 160}, ...],
+              "馬連": [{"horses": ["5", "7"], "payout": 1230}],
+              "馬単": [{"horses": ["7", "5"], "payout": 2100}],
+              "ワイド": [{"horses": ["5", "7"], "payout": 450}, ...],
+              "3連複": [{"horses": ["3", "5", "7"], "payout": 8900}],
+              "3連単": [{"horses": ["7", "5", "3"], "payout": 24300}],
+            }
+        """
+        url = f"{self.BASE_URL}/race/{race_id}/"
+        logger.debug(f"Fetching payouts: {url}")
+        soup = self._get(url)
+
+        # netkeiba の払戻テーブルは class="pay_table_01" が2つ
+        # 券種名の表記ゆれを正規化
+        bet_type_map = {
+            "単勝": "単勝", "複勝": "複勝", "枠連": "枠連",
+            "馬連": "馬連", "ワイド": "ワイド", "馬単": "馬単",
+            "三連複": "3連複", "三連単": "3連単",
+            "3連複": "3連複", "3連単": "3連単",
+        }
+
+        payout_data: dict[str, list[dict]] = {}
+
+        for table in soup.select("table.pay_table_01"):
+            for tr in table.select("tr"):
+                th = tr.select_one("th")
+                if not th:
+                    continue
+                bet_type = bet_type_map.get(th.get_text(strip=True), "")
+                if not bet_type:
+                    continue
+
+                tds = tr.select("td")
+                if len(tds) < 2:
+                    continue
+
+                horses_td = tds[0]
+                payout_td = tds[1]
+
+                # 複勝・ワイドは <br> で複数の馬番/払戻が入る
+                # horses_td テキストを <br> 区切りで分割して各行ごとに処理
+                horses_lines = [
+                    line.strip() for line in
+                    horses_td.decode_contents().split("<br/>")
+                    if line.strip()
+                ]
+                payout_lines = [
+                    line.strip().replace(",", "") for line in
+                    payout_td.decode_contents().split("<br/>")
+                    if line.strip()
+                ]
+
+                if not horses_lines:
+                    continue
+
+                # 行数が一致しない場合は1組として扱う
+                if len(horses_lines) != len(payout_lines):
+                    horses_lines = [horses_td.get_text(separator=" ", strip=True)]
+                    payout_lines = [payout_td.get_text(strip=True).replace(",", "")]
+
+                if bet_type not in payout_data:
+                    payout_data[bet_type] = []
+
+                for h_str, p_str in zip(horses_lines, payout_lines):
+                    # 馬番抽出（数字のみ、"-" と "→" で区切り）
+                    nums = re.findall(r"\d+", h_str)
+                    try:
+                        payout_val = int(re.sub(r"[^\d]", "", p_str))
+                    except (ValueError, TypeError):
+                        continue
+                    if nums and payout_val > 0:
+                        payout_data[bet_type].append({
+                            "horses": nums,
+                            "payout": payout_val,
+                        })
+
+        if not payout_data:
+            logger.warning(f"No payout data found for race_id={race_id}")
+
+        return payout_data
+
+    # ------------------------------------------------------------------
+    # 当日開催スケジュール取得
+    # ------------------------------------------------------------------
+
+    def fetch_race_schedule_by_date(self, target_date: date) -> dict[str, list[str]]:
+        """
+        指定日の会場別 race_id リストを返す。
+
+        Parameters
+        ----------
+        target_date : date
+
+        Returns
+        -------
+        dict[str, list[str]]
+            venue_name → [race_id, ...] の dict（レース番号昇順）
+            例: {"東京": ["202601040501", ...], "中山": [...]}
+        """
+        VENUE_CODE_TO_NAME = {
+            "01": "札幌", "02": "函館", "03": "福島", "04": "新潟",
+            "05": "東京", "06": "中山", "07": "中京", "08": "京都",
+            "09": "阪神", "10": "小倉",
+        }
+
+        date_str = target_date.strftime("%Y%m%d")
+        url = f"{self.RACE_URL}/top/race_list.html?kaisai_date={date_str}"
+        logger.info(f"Fetching race schedule (Selenium): {url}")
+
+        # このページは JavaScript で race_id を動的レンダリングするため Selenium を使用
+        driver = self._get_driver()
+        try:
+            driver.get(url)
+        except Exception as e:
+            logger.warning(f"driver.get() raised: {e} — 部分DOMで続行")
+
+        # JS レンダリング完了を待つ（race_id が現れるまで最大15秒）
+        from selenium.webdriver.support.ui import WebDriverWait
+        from selenium.webdriver.support import expected_conditions as EC
+        from selenium.webdriver.common.by import By
+        try:
+            WebDriverWait(driver, 15).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "a[href*='race_id=']"))
+            )
+        except Exception:
+            logger.warning("race_id リンクが現れませんでした — タイムアウト後にパース")
+
+        soup = BeautifulSoup(driver.page_source, "lxml")
+        schedule: dict[str, list[str]] = {}
+
+        # パターン1: 会場ブロックごとに race_id を収集
+        for block in soup.select(".RaceList_DataItem, .RaceList_DataTitle"):
+            venue_tag = block.select_one(".RaceList_DataTitle, .Baname, .Racecourse")
+            venue_name = venue_tag.get_text(strip=True) if venue_tag else ""
+            ids = list(dict.fromkeys([
+                m.group(1)
+                for a in block.select("a[href]")
+                for m in [re.search(r"race_id=(\d{12})", a.get("href", ""))]
+                if m
+            ]))
+            if ids and venue_name:
+                schedule.setdefault(venue_name, [])
+                schedule[venue_name].extend(ids)
+
+        # パターン2（フォールバック）: ページ全体の race_id を venue_code で分類
+        if not schedule:
+            all_ids = list(dict.fromkeys([
+                m.group(1)
+                for a in soup.select("a[href]")
+                for m in [re.search(r"race_id=(\d{12})", a.get("href", ""))]
+                if m
+            ]))
+            for rid in all_ids:
+                # YYYYMMDDVVNN 形式では [8:10]、YYYYVVKKNNRR 形式では [4:6]
+                code = rid[8:10] if rid[8:10] in VENUE_CODE_TO_NAME else rid[4:6]
+                name = VENUE_CODE_TO_NAME.get(code, f"会場{code}")
+                schedule.setdefault(name, []).append(rid)
+
+        # 重複除去 + ソート
+        for name in schedule:
+            schedule[name] = sorted(dict.fromkeys(schedule[name]))
+
+        logger.info(
+            f"  {target_date}: {sum(len(v) for v in schedule.values())} races "
+            f"at {list(schedule.keys())}"
+        )
+        return schedule
 
     # ------------------------------------------------------------------
     # 複数レースの過去成績を一括取得
