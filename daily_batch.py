@@ -527,22 +527,16 @@ def main() -> None:
     logger.info("=" * 60)
 
     # ── 1. モデル・履歴読み込み ──────────────────────────────────
-    logger.info("[1/5] モデル・履歴読み込み")
-    trainer  = ModelTrainer.load(settings.model_path)
-    hist_df  = load_history()
+    logger.info("[1/5] モデル・FeatureEngineer 読み込み")
+    trainer = ModelTrainer.load(settings.model_path)
 
-    # ── 2. FeatureEngineer 構築（当日以前の履歴でルックバック） ───
-    logger.info("[2/5] FeatureEngineer 構築")
-    history_before = hist_df[
-        hist_df["race_date"] < pd.Timestamp(target_date)
-    ].copy()
-    if history_before.empty:
-        logger.warning("  過去履歴なし → 全履歴を使用（本番運用前に要確認）")
-        history_before = hist_df.copy()
-
-    fe = FeatureEngineer(history_before)
-    fe.precompute_aggregations()
-    logger.info(f"  FeatureEngineer 準備完了 ({len(history_before):,} rows)")
+    # ── 2. FeatureEngineer 構築 ──────────────────────────────────
+    # feature_stats.pkl（リポジトリに含まれる）から推論用統計を読み込む。
+    # GitHub Actions のクリーン環境では data/raw/*.csv が存在しないため
+    # FeatureEngineer(history_df) は使用しない。
+    logger.info("[2/5] FeatureEngineer 構築（feature_stats.pkl から）")
+    fe = FeatureEngineer.from_stats(settings.stats_path)
+    logger.info("  FeatureEngineer 準備完了")
 
     # ── 3. 当日レーススケジュール取得 ────────────────────────────
     logger.info("[3/5] 当日レーススケジュール取得")
