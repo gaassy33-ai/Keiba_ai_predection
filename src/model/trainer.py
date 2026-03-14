@@ -7,6 +7,7 @@ LightGBM 学習スクリプト。
 
 from __future__ import annotations
 
+import json
 import joblib
 from pathlib import Path
 
@@ -32,11 +33,17 @@ class ModelTrainer:
     >>> trainer.save()
     """
 
+    # ----------------------------------------------------------------
+    # 改善②: ハイパーパラメータ調整
+    #   - learning_rate: 0.05 → 0.02（細かいステップで収束・木数増加）
+    #   - num_leaves: 63 → 127（全会場データ増加に対応した表現力向上）
+    #   - EARLY_STOPPING_ROUNDS: 50 → 100（早期終了を緩和して十分探索）
+    # ----------------------------------------------------------------
     LGBM_PARAMS = {
         "objective": "binary",
         "metric": "binary_logloss",
-        "learning_rate": 0.05,
-        "num_leaves": 63,
+        "learning_rate": 0.02,
+        "num_leaves": 127,
         "max_depth": -1,
         "min_child_samples": 20,
         "feature_fraction": 0.8,
@@ -49,8 +56,8 @@ class ModelTrainer:
         "random_state": 42,
     }
 
-    NUM_BOOST_ROUND = 1000
-    EARLY_STOPPING_ROUNDS = 50
+    NUM_BOOST_ROUND = 2000
+    EARLY_STOPPING_ROUNDS = 100
 
     def __init__(self) -> None:
         self.model: lgb.Booster | None = None
@@ -107,7 +114,8 @@ class ModelTrainer:
             oof_preds[val_idx] = booster.predict(X_val)
             models.append(booster)
             logger.info(
-                f"Fold {fold+1} | logloss={log_loss(y_val, oof_preds[val_idx]):.4f} "
+                f"Fold {fold+1} | best_iter={booster.best_iteration} "
+                f"logloss={log_loss(y_val, oof_preds[val_idx]):.4f} "
                 f"auc={roc_auc_score(y_val, oof_preds[val_idx]):.4f}"
             )
 
@@ -125,6 +133,9 @@ class ModelTrainer:
             num_boost_round=best_rounds,
         )
         logger.info(f"Final model trained with {best_rounds} rounds.")
+
+        # 特徴量重要度をログ出力（改善③）
+        self._log_feature_importance(self.model, label="win_model")
 
         # is_placed モデル（3着以内確率）を追加学習
         if "is_placed" in df.columns:
@@ -170,6 +181,66 @@ class ModelTrainer:
             num_boost_round=best_rounds,
         )
         logger.info(f"Place model trained with {best_rounds} rounds.")
+        self._log_feature_importance(self.place_model, label="place_model")
+
+    # ------------------------------------------------------------------
+    # 改善③: 特徴量重要度の可視化・保存
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _log_feature_importance(model: lgb.Booster, label: str = "model") -> None:
+        """特徴量重要度をログに出力する。"""
+        features = model.feature_name()
+        gain = model.feature_importance("gain")
+        split = model.feature_importance("split")
+        total_gain = gain.sum() or 1
+        pairs = sorted(zip(features, gain, split), key=lambda x: -x[1])
+        logger.info(f"--- 特徴量重要度 [{label}] ---")
+        for f, g, s in pairs:
+            logger.info(f"  {f:<24} gain={g:>8,} ({g/total_gain*100:>5.1f}%)  split={s:>6,}")
+
+    def save_feature_importance(self, path: Path | None = None) -> None:
+        """
+        特徴量重要度を JSON で保存する。
+        GitHub Actions から commit して docs/ に置くことで
+        Python バージョン非依存で参照できる。
+        """
+        if self.model is None:
+            return
+        path = path or (settings.model_path.parent / "feature_importance.json")
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        def _importance_dict(model: lgb.Booster) -> list[dict]:
+            features = model.feature_name()
+            gain = model.feature_importance("gain")
+            split = model.feature_importance("split")
+            total_gain = gain.sum() or 1
+            pairs = sorted(zip(features, gain.tolist(), split.tolist()), key=lambda x: -x[1])
+            return [
+                {
+                    "feature": f,
+                    "gain": int(g),
+                    "gain_pct": round(g / total_gain * 100, 2),
+                    "split": int(s),
+                }
+                for f, g, s in pairs
+            ]
+
+        payload = {
+            "win_model": {
+                "num_trees": self.model.num_trees(),
+                "importance": _importance_dict(self.model),
+            }
+        }
+        if self.place_model is not None:
+            payload["place_model"] = {
+                "num_trees": self.place_model.num_trees(),
+                "importance": _importance_dict(self.place_model),
+            }
+
+        path.write_text(json.dumps(payload, ensure_ascii=False, indent=2))
+        logger.info(f"Feature importance saved to {path}")
 
     # ------------------------------------------------------------------
     # 保存 / 読み込み
@@ -181,6 +252,9 @@ class ModelTrainer:
         payload = {"model": self.model, "place_model": self.place_model}
         joblib.dump(payload, path)
         logger.info(f"Model saved to {path}")
+
+        # 特徴量重要度を JSON でも保存（改善③）
+        self.save_feature_importance(path.parent / "feature_importance.json")
 
     @classmethod
     def load(cls, path: Path | None = None) -> "ModelTrainer":

@@ -22,25 +22,87 @@ h2 { font-size: 13px; color: #8b949e; text-transform: uppercase; letter-spacing:
 .neutral { color: #64b5f6; }
 .empty { color: #484f58; font-size: 13px; text-align: center; padding: 20px; }
 .footer { color: #484f58; font-size: 11px; text-align: center; margin-top: 20px; padding-bottom: 20px; }
+.fi-bar-wrap { margin-bottom: 6px; }
+.fi-label { font-size: 11px; color: #c9d1d9; margin-bottom: 2px; display: flex; justify-content: space-between; }
+.fi-bar-bg { background: #21262d; border-radius: 4px; height: 8px; }
+.fi-bar { background: #388bfd; border-radius: 4px; height: 8px; transition: width .4s; }
 </style>
 </head>
 <body>
 <h1>&#x1F3C7; AI成績・回収率</h1>
 <h2>全期間</h2>
 <div class="kpi-grid">
-  <div class="kpi"><div class="kpi-label">総レース数</div><div class="kpi-value neutral">--</div></div>
-  <div class="kpi"><div class="kpi-label">的中率</div><div class="kpi-value neutral">--%</div></div>
-  <div class="kpi"><div class="kpi-label">回収率</div><div class="kpi-value neutral">--%</div></div>
-  <div class="kpi"><div class="kpi-label">累計収支</div><div class="kpi-value neutral">--</div></div>
+  <div class="kpi"><div class="kpi-label">総レース数</div><div class="kpi-value neutral" id="total-races">--</div></div>
+  <div class="kpi"><div class="kpi-label">的中率</div><div class="kpi-value neutral" id="hit-rate">--%</div></div>
+  <div class="kpi"><div class="kpi-label">回収率</div><div class="kpi-value neutral" id="roi">--%</div></div>
+  <div class="kpi"><div class="kpi-label">累計収支</div><div class="kpi-value neutral" id="pnl">--</div></div>
 </div>
 <h2>累計収支グラフ</h2>
 <div class="card">
-  <p class="empty">土日の朝バッチ実行後に実績データが表示されます。</p>
+  <p class="empty" id="chart-empty">土日の朝バッチ実行後に実績データが表示されます。</p>
+  <canvas id="pnl-chart" style="display:none;"></canvas>
 </div>
 <h2>最近の予想</h2>
-<div class="card">
+<div class="card" id="recent-list">
   <p class="empty">まだデータがありません</p>
 </div>
-<p class="footer">更新: 2026/03/09 ／ AIの予想は参考情報です</p>
+
+<h2>&#x1F4CA; 特徴量重要度（モデル）</h2>
+<div class="card" id="fi-section">
+  <p class="empty" id="fi-empty">モデル学習後に表示されます。</p>
+</div>
+
+<p class="footer" id="footer-ts">更新: -- ／ AIの予想は参考情報です</p>
+
+<script>
+const BASE = "https://raw.githubusercontent.com/gaassy33-ai/Keiba_ai_predection/main/data/models";
+
+// 特徴量重要度を取得して表示
+fetch(`${BASE}/feature_importance.json`)
+  .then(r => r.ok ? r.json() : null)
+  .then(data => {
+    if (!data || !data.win_model) return;
+    const section = document.getElementById("fi-section");
+    const items = data.win_model.importance;
+    const numTrees = data.win_model.num_trees;
+    const maxGain = items[0].gain_pct;
+
+    let html = `<div style="font-size:11px;color:#8b949e;margin-bottom:10px;">勝ちモデル（${numTrees}本の木）</div>`;
+    items.forEach(item => {
+      const w = Math.round(item.gain_pct / maxGain * 100);
+      html += `
+        <div class="fi-bar-wrap">
+          <div class="fi-label">
+            <span>${item.feature}</span>
+            <span>${item.gain_pct}%</span>
+          </div>
+          <div class="fi-bar-bg"><div class="fi-bar" style="width:${w}%"></div></div>
+        </div>`;
+    });
+
+    if (data.place_model) {
+      const pi = data.place_model.importance;
+      const pTrees = data.place_model.num_trees;
+      const pMax = pi[0].gain_pct;
+      html += `<div style="font-size:11px;color:#8b949e;margin:14px 0 10px;">複勝モデル（${pTrees}本の木）</div>`;
+      pi.forEach(item => {
+        const w = Math.round(item.gain_pct / pMax * 100);
+        html += `
+          <div class="fi-bar-wrap">
+            <div class="fi-label">
+              <span>${item.feature}</span>
+              <span>${item.gain_pct}%</span>
+            </div>
+            <div class="fi-bar-bg"><div class="fi-bar" style="width:${w}%;background:#f78166;"></div></div>
+          </div>`;
+      });
+    }
+
+    section.innerHTML = html;
+    document.getElementById("footer-ts").textContent =
+      `更新: ${new Date().toLocaleDateString("ja-JP")} ／ AIの予想は参考情報です`;
+  })
+  .catch(() => {});
+</script>
 </body>
 </html>
