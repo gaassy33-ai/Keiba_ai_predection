@@ -287,7 +287,7 @@ def predict_and_bet(
 
 def _race_row_component(race_result: dict | None, race_num: int) -> list[dict]:
     """1レース分の行コンポーネント（separator + box）を返す"""
-    label = f"{race_num}R"
+    label = f"{race_num:>2}R"  # 右詰めで幅を揃える（1R→" 1R"）
 
     if race_result is None or not race_result.get("is_buy"):
         # 見送りレース
@@ -300,7 +300,7 @@ def _race_row_component(race_result: dict | None, race_num: int) -> list[dict]:
                 {
                     "type": "text", "text": label,
                     "size": "sm", "color": "#cccccc",
-                    "flex": 0, "minWidth": "28px",
+                    "flex": 0,
                 },
                 {
                     "type": "text", "text": "— 見送り",
@@ -327,7 +327,7 @@ def _race_row_component(race_result: dict | None, race_num: int) -> list[dict]:
                 {
                     "type": "text", "text": label,
                     "size": "sm", "weight": "bold", "color": "#1a5533",
-                    "flex": 0, "minWidth": "28px",
+                    "flex": 0,
                 },
                 {
                     "type": "box",
@@ -365,7 +365,10 @@ def _build_venue_bubble(
     by_num: dict[int, dict | None] = {}
     for r in race_results:
         if r is not None:
-            n = int(r["race_id"][-2:])
+            try:
+                n = int(r["race_id"][-2:])
+            except (ValueError, KeyError, TypeError):
+                continue
             by_num[n] = r
 
     buy_count = sum(1 for r in by_num.values() if r and r.get("is_buy"))
