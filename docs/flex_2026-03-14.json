@@ -1,6 +1,6 @@
 {
   "type": "flex",
-  "altText": "03/14 競馬予測 | 東京・中京・札幌",
+  "altText": "03/14 競馬予測 | 中山・阪神・中京",
   "contents": {
     "type": "carousel",
     "contents": [
@@ -10,12 +10,12 @@
         "header": {
           "type": "box",
           "layout": "vertical",
-          "backgroundColor": "#1a472a",
+          "backgroundColor": "#8b0000",
           "paddingAll": "16px",
           "contents": [
             {
               "type": "text",
-              "text": "東京",
+              "text": "中山",
               "weight": "bold",
               "color": "#ffffff",
               "size": "lg"
@@ -478,12 +478,12 @@
         "header": {
           "type": "box",
           "layout": "vertical",
-          "backgroundColor": "#b8860b",
+          "backgroundColor": "#1b3a6b",
           "paddingAll": "16px",
           "contents": [
             {
               "type": "text",
-              "text": "中京",
+              "text": "阪神",
               "weight": "bold",
               "color": "#ffffff",
               "size": "lg"
@@ -978,12 +978,12 @@
         "header": {
           "type": "box",
           "layout": "vertical",
-          "backgroundColor": "#1a5276",
+          "backgroundColor": "#b8860b",
           "paddingAll": "16px",
           "contents": [
             {
               "type": "text",
-              "text": "札幌",
+              "text": "中京",
               "weight": "bold",
               "color": "#ffffff",
               "size": "lg"
