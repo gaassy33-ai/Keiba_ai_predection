@@ -1044,33 +1044,20 @@ class NetkeibaScraper:
         soup = BeautifulSoup(driver.page_source, "lxml")
         schedule: dict[str, list[str]] = {}
 
-        # パターン1: 会場ブロックごとに race_id を収集
-        for block in soup.select(".RaceList_DataItem, .RaceList_DataTitle"):
-            venue_tag = block.select_one(".RaceList_DataTitle, .Baname, .Racecourse")
-            venue_name = venue_tag.get_text(strip=True) if venue_tag else ""
-            ids = list(dict.fromkeys([
-                m.group(1)
-                for a in block.select("a[href]")
-                for m in [re.search(r"race_id=(\d{12})", a.get("href", ""))]
-                if m
-            ]))
-            if ids and venue_name:
-                schedule.setdefault(venue_name, [])
-                schedule[venue_name].extend(ids)
-
-        # パターン2（フォールバック）: ページ全体の race_id を venue_code で分類
-        if not schedule:
-            all_ids = list(dict.fromkeys([
-                m.group(1)
-                for a in soup.select("a[href]")
-                for m in [re.search(r"race_id=(\d{12})", a.get("href", ""))]
-                if m
-            ]))
-            for rid in all_ids:
-                # YYYYMMDDVVNN 形式では [8:10]、YYYYVVKKNNRR 形式では [4:6]
-                code = rid[8:10] if rid[8:10] in VENUE_CODE_TO_NAME else rid[4:6]
-                name = VENUE_CODE_TO_NAME.get(code, f"会場{code}")
-                schedule.setdefault(name, []).append(rid)
+        # race_id の [4:6] が会場コード（YYYYVVKKDDNN 形式）
+        # HTML のクラス名・構造に依存せず race_id から会場を確定する
+        all_ids = list(dict.fromkeys([
+            m.group(1)
+            for a in soup.select("a[href]")
+            for m in [re.search(r"race_id=(\d{12})", a.get("href", ""))]
+            if m
+        ]))
+        logger.info(f"  ページ内 race_id 件数: {len(all_ids)}")
+        for rid in all_ids:
+            code = rid[4:6]
+            name = VENUE_CODE_TO_NAME.get(code, f"会場{code}")
+            schedule.setdefault(name, []).append(rid)
+            logger.debug(f"  race_id={rid} → code={code} → venue={name}")
 
         # 重複除去 + ソート
         for name in schedule:
