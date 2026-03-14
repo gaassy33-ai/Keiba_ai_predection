@@ -131,6 +131,62 @@ def load_history() -> pd.DataFrame:
 
 
 # ======================================================================
+# 予測ログ保存（docs/predictions_log.csv）
+# ======================================================================
+
+PREDICTIONS_LOG = ROOT / "docs" / "predictions_log.csv"
+PREDICTIONS_LOG_COLS = [
+    "date", "race_id", "race_name", "honmei_num", "honmei_name",
+    "honmei_prob", "is_buy", "hit", "payout",
+]
+
+
+def _save_prediction_log(
+    target_date: date,
+    venue_results: dict[str, list[dict | None]],
+) -> None:
+    """
+    予測結果を docs/predictions_log.csv に追記する。
+    hit / payout は未確定（週次バッチで更新）のため空欄で保存。
+    当日分が既に存在する場合は上書き（重複排除）。
+    """
+    rows = []
+    for results in venue_results.values():
+        for r in results:
+            if r is None:
+                continue
+            rows.append({
+                "date":         str(target_date),
+                "race_id":      r["race_id"],
+                "race_name":    r.get("race_name", ""),
+                "honmei_num":   r["honmei_num"],
+                "honmei_name":  r["honmei_name"],
+                "honmei_prob":  r["honmei_prob"],
+                "is_buy":       r["is_buy"],
+                "hit":          "",
+                "payout":       "",
+            })
+
+    if not rows:
+        logger.info("  予測ログ: 対象レースなし（スキップ）")
+        return
+
+    new_df = pd.DataFrame(rows, columns=PREDICTIONS_LOG_COLS)
+
+    if PREDICTIONS_LOG.exists():
+        existing = pd.read_csv(PREDICTIONS_LOG, dtype=str)
+        # 当日分を削除して新データで上書き
+        existing = existing[existing["date"] != str(target_date)]
+        combined = pd.concat([existing, new_df], ignore_index=True)
+    else:
+        combined = new_df
+
+    PREDICTIONS_LOG.parent.mkdir(parents=True, exist_ok=True)
+    combined.to_csv(PREDICTIONS_LOG, index=False)
+    logger.info(f"  予測ログ保存: {PREDICTIONS_LOG} ({len(rows)} 件追記)")
+
+
+# ======================================================================
 # 1レース予測・買い目生成
 # ======================================================================
 
@@ -597,6 +653,9 @@ def main() -> None:
                 logger.info(f"    {result['race_num']:>3}  見送り")
 
     scraper.close()
+
+    # ── 4.5 予測ログ保存（結果は後で週次バッチが更新）────────────
+    _save_prediction_log(target_date, venue_results)
 
     # ── 5. Flex Message 構築・送信 ──────────────────────────────
     logger.info("[5/5] Flex Message 構築・送信")

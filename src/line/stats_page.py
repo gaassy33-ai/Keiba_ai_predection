@@ -15,8 +15,8 @@ from pathlib import Path
 
 import pandas as pd
 
-BASE_DIR         = Path(__file__).resolve().parents[3]
-PREDICTIONS_LOG  = BASE_DIR / "data" / "predictions_log.csv"
+BASE_DIR         = Path(__file__).resolve().parents[2]
+PREDICTIONS_LOG  = BASE_DIR / "docs" / "predictions_log.csv"
 OUTPUT_PATH      = BASE_DIR / "docs" / "stats.html"
 
 

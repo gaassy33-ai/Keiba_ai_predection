@@ -164,7 +164,9 @@ jobs:
       (github.event_name == 'schedule' && github.event.schedule == '0 8 * * 0')
       || (github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'summary')
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
+    permissions:
+      contents: write
     concurrency:
       group: keiba-weekly-summary
       cancel-in-progress: false
@@ -185,13 +187,18 @@ jobs:
       - name: Install Japanese fonts
         run: sudo apt-get install -y fonts-noto-cjk && fc-cache -f
 
-      - name: 週末まとめ LINE 送信
+      - name: 予測結果の取得・stats.html 更新
         env:
-          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
-          LINE_CHANNEL_SECRET: ${{ secrets.LINE_CHANNEL_SECRET }}
-          LINE_TARGET_USER_ID: ${{ secrets.LINE_TARGET_USER_ID }}
           TZ: "Asia/Tokyo"
-        run: python -m src.scheduler.daily_batch --weekly-summary
+        run: python -m src.line.update_results
+
+      - name: Commit & push stats
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/predictions_log.csv docs/stats.html
+          git diff --cached --quiet || git commit -m "chore: 週末成績集計 [skip ci]"
+          git push || true
 
       - name: Upload logs on failure
         if: failure()
