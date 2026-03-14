@@ -1,10 +1,12 @@
 """
-買い目推奨ロジック。
+買い目推奨ロジック（改善版 v2）。
 
 generate_betting_strategies(horses, budget) が券種ごとの推奨買い目リストを返す。
 
-期待値 (EV = model_prob × estimated_odds) が高い買い目を優先し、
-Kelly 基準で予算を配分する。
+改善点:
+  1. レース絞り込み (min_honmei_prob / min_confidence_gap)
+  2. EV ベースの相手選び + トリガミ除外
+  3. 馬単フォーメーション追加・3連複を◎1軸流しに変更・点数考慮 Kelly 配分
 
 horses の各要素:
     horse_number      : int
@@ -99,7 +101,7 @@ def _prob_trifecta_box(probs: list[float], idx: list[int]) -> float:
 
 
 # ---------------------------------------------------------------------------
-# オッズ推定・Kelly 配分
+# オッズ推定・EV スコア・トリガミ判定
 # ---------------------------------------------------------------------------
 
 def _market_prob(win_odds: float | None) -> float:
@@ -120,6 +122,28 @@ def _est_odds(model_prob: float, market_prob: float, bet_type: str) -> float:
     return (1.0 - take) / max(market_prob, 0.001)
 
 
+def _ev_score(h: dict, fallback_odds: float = 5.0) -> float:
+    """
+    horse dict から EV スコア（win_prob × win_odds）を計算。
+
+    相手馬の優先順位付けに使用する。win_odds 未取得時は fallback_odds で代替。
+    """
+    prob = float(h.get("win_prob", 0))
+    odds = h.get("win_odds")
+    if odds and float(odds) > 1.0:
+        return prob * float(odds)
+    return prob * fallback_odds
+
+
+def _is_torikami(est_odds: float, min_roi: float = 1.05) -> bool:
+    """
+    的中しても回収率が min_roi を下回るトリガミ判定。
+
+    推定オッズが min_roi 倍未満 → True（購入不要）。
+    """
+    return est_odds < min_roi
+
+
 def _kelly(prob: float, odds: float) -> float:
     """Kelly 分率（0〜0.25 にクリップ）。"""
     b = odds - 1.0
@@ -128,22 +152,32 @@ def _kelly(prob: float, odds: float) -> float:
     return max(0.0, min((b * prob - (1.0 - prob)) / b, 0.25))
 
 
-def _allocate(bets: list[BetLine], budget: int) -> None:
-    """Kelly 分率比例で budget を各 bet に配分（100円単位）。"""
-    kelly_vals = [_kelly(b.prob, b.est_odds) for b in bets]
+def _allocate_per_combo(bets: list[BetLine], budget: int) -> None:
+    """
+    1点あたり単位で Kelly 配分する（点数考慮版）。
+
+    1点あたりの的中確率 = prob / combo_count として Kelly を計算し、
+    allocation = kelly_per_combo × combo_count（100円単位）。
+    多点券種への過剰配分を防ぐ。
+    """
+    kelly_vals = []
+    for b in bets:
+        prob_per = b.prob / max(b.combo_count, 1)
+        kelly_vals.append(_kelly(prob_per, b.est_odds))
+
     total_k = sum(kelly_vals)
 
     if total_k < 1e-9:
         each = max((budget // max(len(bets), 1) // 100) * 100, 100)
         for b in bets:
-            b.allocation = each
+            b.allocation = each * b.combo_count
         return
 
     for i, b in enumerate(bets):
-        raw = budget * kelly_vals[i] / total_k
-        b.allocation = max(int(raw / 100) * 100, 100)
+        raw_per_combo = budget * kelly_vals[i] / total_k
+        per_combo = max(int(raw_per_combo / 100) * 100, 100)
+        b.allocation = per_combo * b.combo_count
 
-    # 端数を最高 Kelly のベットに加算
     used = sum(b.allocation for b in bets)
     diff = budget - used
     if diff != 0:
@@ -159,9 +193,11 @@ def generate_betting_strategies(
     horses: list[dict],
     budget: int = 10_000,
     min_ev: float = 0.75,
+    min_honmei_prob: float = 0.15,      # 【改善1】◎勝率の最低閾値
+    min_confidence_gap: float = 0.05,   # 【改善1】◎と○の勝率差の最低値
 ) -> list[BetLine]:
     """
-    予測勝率とオッズから推奨買い目リストを生成する。
+    予測勝率とオッズから推奨買い目リストを生成する（改善版 v2）。
 
     Parameters
     ----------
@@ -171,11 +207,16 @@ def generate_betting_strategies(
         総予算（円）。
     min_ev : float
         この期待値未満の買い目はスキップする。
+    min_honmei_prob : float
+        ◎の予測勝率がこれを下回るレースは全券種スキップ（「見」）。
+    min_confidence_gap : float
+        ◎と○の勝率差がこれを下回る混戦レースも全券種スキップ。
 
     Returns
     -------
     list[BetLine]
         EV 降順、allocation 設定済みの買い目リスト。
+        レース絞り込み条件を満たさない場合は空リストを返す。
     """
     if not horses:
         return []
@@ -194,6 +235,18 @@ def generate_betting_strategies(
     model_probs  = [max(h.get("win_prob", 1 / n), 1e-6) for h in sh]
     market_probs = [_market_prob(h.get("win_odds")) for h in sh]
 
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # 【改善1】レース絞り込み（見・ケン）
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    honmei_p = model_probs[0]
+    taikou_p = model_probs[1] if n >= 2 else 0.0
+
+    if honmei_p < min_honmei_prob:
+        return []   # ◎の信頼度が低い → 見送り
+
+    if (honmei_p - taikou_p) < min_confidence_gap:
+        return []   # 混戦で軸が定まらない → 見送り
+
     def num(h: dict) -> str:
         return str(h.get("horse_number", "?"))
 
@@ -206,7 +259,23 @@ def generate_betting_strategies(
     honmei = sh[0]
     bets: list[BetLine] = []
 
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # 【改善2】EV ランク付き相手候補の生成
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # 相手候補プール: ◎を除く上位5頭（win_prob 順）
+    candidate_pool = sh[1:min(6, n)]   # ○▲☆△ + α
+
+    # EV スコア = win_prob × win_odds でランキング（オッズなし時は5倍代替）
+    ev_order = sorted(
+        range(len(candidate_pool)),
+        key=lambda i: _ev_score(candidate_pool[i]),
+        reverse=True,
+    )
+    # sh の絶対インデックス（0=◎ を除く）に変換
+    ev_top_idx = [ev_order[i] + 1 for i in range(len(ev_order))]   # 全相手を EV 順で保持
+
     # ── 単勝 ──────────────────────────────────────────────────────────────
+    # 変更なし（改善1の絞り込みが最大の改善）
     win_odds = honmei.get("win_odds")
     if win_odds and win_odds > 1.0:
         prob = model_probs[0]
@@ -223,6 +292,7 @@ def generate_betting_strategies(
             ))
 
     # ── 複勝 ──────────────────────────────────────────────────────────────
+    # 変更なし（改善1の絞り込みで向上）
     place_odds = honmei.get("place_odds_center") or honmei.get("place_odds_min")
     if place_odds:
         place_prob = min(model_probs[0] * 2.5, 0.75)
@@ -238,42 +308,83 @@ def generate_betting_strategies(
                 ev=ev,
             ))
 
-    # ── 馬連（◎ → ○▲☆△ 流し、最大4点）────────────────────────────────────
+    # ── 馬連（◎ → EV上位3頭、トリガミ除外）────────────────────────────
+    # 【変更】4点一括 → EV上位3頭を個別評価してトリガミを除く
     if n >= 2:
-        partner_idx = list(range(1, min(5, n)))  # ○▲☆△
-        mq_sum = sum(_prob_quinella(model_probs, 0, j) for j in partner_idx)
-        xq_sum = sum(_prob_quinella(market_probs, 0, j) for j in partner_idx)
-        odds = _est_odds(mq_sum, xq_sum, "馬連")
-        ev = mq_sum * odds
-        partner_str = "/".join(mk(sh[j]) + num(sh[j]) for j in partner_idx)
-        if ev >= min_ev:
+        valid_baren: list[tuple] = []
+        for j in ev_top_idx[:3]:   # EV 上位3頭
+            if j >= n:
+                continue
+            mq = _prob_quinella(model_probs, 0, j)
+            xq = _prob_quinella(market_probs, 0, j)
+            est = _est_odds(mq, xq, "馬連")
+            ev = mq * est
+            if ev >= min_ev and not _is_torikami(est):
+                valid_baren.append((j, mq, est, ev))
+
+        if valid_baren:
+            total_p = sum(x[1] for x in valid_baren)
+            avg_ev  = sum(x[3] for x in valid_baren) / len(valid_baren)
+            avg_est = avg_ev / total_p if total_p > 0 else 0
+            partner_str = "/".join(mk(sh[j]) + num(sh[j]) for j, *_ in valid_baren)
             bets.append(BetLine(
                 bet_type="馬連",
                 label=f"◎{num(honmei)}→{partner_str} 流し",
-                description=f"◎→○▲☆△ 流し {len(partner_idx)}点",
-                combo_count=len(partner_idx),
-                prob=mq_sum,
-                est_odds=odds,
-                ev=ev,
+                description=f"◎→EV上位 {len(valid_baren)}点",
+                combo_count=len(valid_baren),
+                prob=total_p,
+                est_odds=avg_est,
+                ev=avg_ev,
             ))
 
-    # ── ワイド（上位5頭から EV 上位2点）──────────────────────────────────
+    # ── 馬単（◎1着固定 → EV上位3頭フォーメーション、トリガミ除外）────────
+    # 【新規追加】◎の1着精度（30.8%）を最大限活用
+    if n >= 2:
+        valid_umatan: list[tuple] = []
+        for j in ev_top_idx[:3]:   # EV 上位3頭
+            if j >= n:
+                continue
+            mh = _harville(model_probs, [0, j])
+            xh = _harville(market_probs, [0, j])
+            est = _est_odds(mh, xh, "馬単")
+            ev = mh * est
+            if ev >= min_ev and not _is_torikami(est):
+                valid_umatan.append((j, mh, est, ev))
+
+        if valid_umatan:
+            total_p = sum(x[1] for x in valid_umatan)
+            avg_ev  = sum(x[3] for x in valid_umatan) / len(valid_umatan)
+            avg_est = avg_ev / total_p if total_p > 0 else 0
+            partner_str = "/".join(mk(sh[j]) + num(sh[j]) for j, *_ in valid_umatan)
+            bets.append(BetLine(
+                bet_type="馬単",
+                label=f"◎{num(honmei)}→{partner_str} フォーメーション",
+                description=f"◎1着固定→EV上位 {len(valid_umatan)}点",
+                combo_count=len(valid_umatan),
+                prob=total_p,
+                est_odds=avg_est,
+                ev=avg_ev,
+            ))
+
+    # ── ワイド（上位5頭から EV上位2点、トリガミ除外）─────────────────────
+    # 【変更】トリガミ除外を追加
     top_n = min(5, n)
     wide_candidates: list[BetLine] = []
     for i, j in combinations(range(top_n), 2):
         mw = _prob_wide(model_probs, i, j)
         xw = _prob_wide(market_probs, i, j)
-        odds = _est_odds(mw, xw, "ワイド")
-        ev = mw * odds
-        wide_candidates.append(BetLine(
-            bet_type="ワイド",
-            label=f"{mk(sh[i])}{num(sh[i])}-{mk(sh[j])}{num(sh[j])}",
-            description=f"{num(sh[i])}-{num(sh[j])}",
-            combo_count=1,
-            prob=mw,
-            est_odds=odds,
-            ev=ev,
-        ))
+        odds_w = _est_odds(mw, xw, "ワイド")
+        ev = mw * odds_w
+        if not _is_torikami(odds_w):   # トリガミ除外
+            wide_candidates.append(BetLine(
+                bet_type="ワイド",
+                label=f"{mk(sh[i])}{num(sh[i])}-{mk(sh[j])}{num(sh[j])}",
+                description=f"{num(sh[i])}-{num(sh[j])}",
+                combo_count=1,
+                prob=mw,
+                est_odds=odds_w,
+                ev=ev,
+            ))
     wide_candidates.sort(key=lambda b: b.ev, reverse=True)
     top_wide = [b for b in wide_candidates[:2] if b.ev >= min_ev]
     if top_wide:
@@ -290,41 +401,57 @@ def generate_betting_strategies(
             ev=avg_ev,
         ))
 
-    # ── 3連複（◎○▲ BOX）────────────────────────────────────────────────
+    # ── 3連複（◎1頭軸 → ○▲☆△ 流し、最大6点、トリガミ除外）─────────────
+    # 【変更】◎○▲BOX1点 → ◎を軸に EV上位4頭から C(4,2)=6点の流し
+    # 紐荒れによる高配当も捕捉できる
     if n >= 3:
-        mt3 = _prob_trifecta_box(model_probs, [0, 1, 2])
-        xt3 = _prob_trifecta_box(market_probs, [0, 1, 2])
-        odds = _est_odds(mt3, xt3, "3連複")
-        ev = mt3 * odds
-        if ev >= min_ev:
+        # EV 上位4頭（相手プール）
+        partner_idx4 = [j for j in ev_top_idx[:4] if j < n]
+        valid_sf: list[tuple] = []
+        for pi, pj in combinations(partner_idx4, 2):
+            mt3 = _prob_trifecta_box(model_probs, [0, pi, pj])
+            xt3 = _prob_trifecta_box(market_probs, [0, pi, pj])
+            est = _est_odds(mt3, xt3, "3連複")
+            ev  = mt3 * est
+            if ev >= min_ev and not _is_torikami(est):
+                valid_sf.append((pi, pj, mt3, est, ev))
+
+        if valid_sf:
+            total_p = sum(x[2] for x in valid_sf)
+            avg_ev  = sum(x[4] for x in valid_sf) / len(valid_sf)
+            avg_est = avg_ev / total_p if total_p > 0 else 0
+            partner_nums = "-".join(
+                sorted(set(
+                    num(sh[p]) for combo in valid_sf for p in combo[:2]
+                ), key=int)
+            )
             bets.append(BetLine(
                 bet_type="3連複",
-                label=f"◎{num(sh[0])}-○{num(sh[1])}-▲{num(sh[2])} BOX",
-                description=f"◎○▲ BOX  1点",
-                combo_count=1,
-                prob=mt3,
-                est_odds=odds,
-                ev=ev,
+                label=f"◎{num(honmei)}-{partner_nums} 流し",
+                description=f"◎1軸→EV上位 {len(valid_sf)}点",
+                combo_count=len(valid_sf),
+                prob=total_p,
+                est_odds=avg_est,
+                ev=avg_ev,
             ))
 
-    # ── 3連単（◎1着固定 → ○▲☆ → ○▲☆△ 流し）──────────────────────────
+    # ── 3連単（◎1着固定 → EV上位3頭 → EV上位3頭、最大6点）────────────
+    # 【変更】3着候補を EV 上位3頭に限定して点数を削減
     if n >= 3:
-        second_pool = list(range(1, min(4, n)))      # ○▲☆
-        third_pool  = list(range(1, min(5, n)))      # ○▲☆△
-        combos_3t   = [(j, k) for j in second_pool for k in third_pool if k != j]
+        pool_idx = [j for j in ev_top_idx[:3] if j < n]   # EV 上位3頭
+        combos_3t = [(j, k) for j in pool_idx for k in pool_idx if k != j]
 
         if combos_3t:
             mt_sum = sum(_harville(model_probs,  [0, j, k]) for j, k in combos_3t)
             xt_sum = sum(_harville(market_probs, [0, j, k]) for j, k in combos_3t)
-            odds = _est_odds(mt_sum, xt_sum, "3連単")
-            ev = mt_sum * odds
-            sec_marks = "".join(mk(sh[j]) for j in second_pool)
-            thi_marks = "".join(mk(sh[k]) for k in sorted(set(third_pool)))
-            if ev >= min_ev:
+            odds   = _est_odds(mt_sum, xt_sum, "3連単")
+            ev     = mt_sum * odds
+            sec_marks = "".join(mk(sh[j]) for j in pool_idx)
+            if ev >= min_ev and not _is_torikami(odds):
                 bets.append(BetLine(
                     bet_type="3連単",
-                    label=f"◎{num(honmei)}→{sec_marks}→{thi_marks} 流し",
-                    description=f"◎→{sec_marks}→{thi_marks}  {len(combos_3t)}点",
+                    label=f"◎{num(honmei)}→{sec_marks}→{sec_marks} フォーメーション",
+                    description=f"◎1着固定→EV上位3→EV上位3  {len(combos_3t)}点",
                     combo_count=len(combos_3t),
                     prob=mt_sum,
                     est_odds=odds,
@@ -334,11 +461,11 @@ def generate_betting_strategies(
     if not bets:
         return []
 
-    # EV 降順ソートして最高 EV に 🔥
+    # EV 降順ソートして最高 EV に is_featured フラグ
     bets.sort(key=lambda b: b.ev, reverse=True)
     bets[0].is_featured = True
 
-    # 予算配分
-    _allocate(bets, budget)
+    # 点数考慮 Kelly 配分
+    _allocate_per_combo(bets, budget)
 
     return bets

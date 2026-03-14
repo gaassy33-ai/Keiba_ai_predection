@@ -72,7 +72,14 @@ class RacePredictor:
             raise RuntimeError("Model is not loaded. Call from_saved_model() first.")
 
         X = feature_df[FeatureEngineer.FEATURE_COLUMNS].copy()
-        probs = self._trainer.model.predict(X)
+        win_probs = self._trainer.model.predict(X)
+
+        # place_model がある場合はアンサンブル（0.7 × 勝率 + 0.3 × 複勝率）
+        if self._trainer.place_model is not None:
+            place_probs = self._trainer.place_model.predict(X)
+            probs = 0.7 * win_probs + 0.3 * place_probs
+        else:
+            probs = win_probs
 
         base_cols = ["horse_id", "horse_name", "horse_number", "frame_number"]
         extra_cols = [

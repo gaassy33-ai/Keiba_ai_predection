@@ -78,12 +78,14 @@ def webhook():
 
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event: MessageEvent) -> None:
-    text = event.message.text.strip().lower()
+    text = event.message.text.strip()
+    # 日本語キーワードはそのまま、英語キーワードは小文字で比較
     dispatch = {
-        "main_race":    _handle_main_race,
+        "今日の予想":  _handle_today_forecast,   # リッチメニュー左上から送信される
+        "main_race":   _handle_main_race,
         "today_result": _handle_today_result,
     }
-    fn = dispatch.get(text)
+    fn = dispatch.get(text) or dispatch.get(text.lower())
     if fn:
         fn(event.reply_token)
 
@@ -104,7 +106,49 @@ def _reply(reply_token: str, messages: list) -> None:
 
 
 # ---------------------------------------------------------------------------
-# ① 今日のメインレース
+# ① 今日の予想一覧（リッチメニュー「今日の予想」キーワード応答）
+# ---------------------------------------------------------------------------
+
+def _handle_today_forecast(reply_token: str) -> None:
+    """
+    朝バッチが生成した Flex Message キャッシュ（logs/flex_YYYY-MM-DD.json）を
+    即座に reply する。キャッシュがない場合はテキストで案内。
+
+    設計方針:
+      LINE Webhook には 30 秒のタイムアウトがあるため、
+      Selenium でその場スクレイピングは行わず朝バッチのキャッシュを再利用する。
+    """
+    import json
+    today = date.today()
+    cache_path = Path(f"logs/flex_{today.isoformat()}.json")
+
+    if cache_path.exists():
+        try:
+            flex_data = json.loads(cache_path.read_text(encoding="utf-8"))
+            alt = flex_data.get("altText", f"{today.strftime('%m/%d')} 競馬予想")
+            _reply(reply_token, [
+                FlexMessage(
+                    alt_text=alt,
+                    contents=FlexContainer.from_dict(flex_data["contents"]),
+                )
+            ])
+            logger.info(f"today_forecast: キャッシュから返信 ({cache_path})")
+            return
+        except Exception as e:
+            logger.warning(f"キャッシュ読み込み失敗: {e}")
+
+    # キャッシュなし → 案内テキスト
+    weekday = ["月", "火", "水", "木", "金", "土", "日"][today.weekday()]
+    _reply(reply_token, [TextMessage(text=(
+        f"🏇 {today.month}/{today.day}（{weekday}）の予想はまだ準備中です。\n\n"
+        "予想は毎週 土・日 朝 7:00 に自動配信されます。\n"
+        "開催日の朝7時以降に再度タップしてください。"
+    ))])
+    logger.info("today_forecast: キャッシュなし → 案内テキストを返信")
+
+
+# ---------------------------------------------------------------------------
+# ② 今日のメインレース（旧キーワード: main_race）
 # ---------------------------------------------------------------------------
 
 def _handle_main_race(reply_token: str) -> None:

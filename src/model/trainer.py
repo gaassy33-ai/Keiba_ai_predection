@@ -54,6 +54,7 @@ class ModelTrainer:
 
     def __init__(self) -> None:
         self.model: lgb.Booster | None = None
+        self.place_model: lgb.Booster | None = None   # is_top3 (3着以内) モデル
         self.feature_columns = FeatureEngineer.FEATURE_COLUMNS
 
     # ------------------------------------------------------------------
@@ -125,6 +126,51 @@ class ModelTrainer:
         )
         logger.info(f"Final model trained with {best_rounds} rounds.")
 
+        # is_placed モデル（3着以内確率）を追加学習
+        if "is_placed" in df.columns:
+            self._fit_place_model(df, group_col)
+
+    def _fit_place_model(self, df: pd.DataFrame, group_col: str = "race_id") -> None:
+        """is_placed（3着以内）を目的変数としたモデルを学習する。"""
+        X = df[self.feature_columns].copy()
+        y = df["is_placed"].values
+        groups = df[group_col].values
+
+        gkf = GroupKFold(n_splits=5)
+        oof_preds = np.zeros(len(X))
+        models: list[lgb.Booster] = []
+
+        for fold, (train_idx, val_idx) in enumerate(gkf.split(X, y, groups)):
+            X_tr, X_val = X.iloc[train_idx], X.iloc[val_idx]
+            y_tr, y_val = y[train_idx], y[val_idx]
+            train_set = lgb.Dataset(X_tr, label=y_tr)
+            val_set = lgb.Dataset(X_val, label=y_val, reference=train_set)
+            booster = lgb.train(
+                self.LGBM_PARAMS,
+                train_set,
+                num_boost_round=self.NUM_BOOST_ROUND,
+                valid_sets=[val_set],
+                callbacks=[
+                    lgb.early_stopping(self.EARLY_STOPPING_ROUNDS, verbose=False),
+                    lgb.log_evaluation(200),
+                ],
+            )
+            oof_preds[val_idx] = booster.predict(X_val)
+            models.append(booster)
+
+        logger.info(
+            f"Place model OOF logloss={log_loss(y, oof_preds):.4f} "
+            f"auc={roc_auc_score(y, oof_preds):.4f}"
+        )
+        full_dataset = lgb.Dataset(X, label=y)
+        best_rounds = max(m.best_iteration for m in models)
+        self.place_model = lgb.train(
+            self.LGBM_PARAMS,
+            full_dataset,
+            num_boost_round=best_rounds,
+        )
+        logger.info(f"Place model trained with {best_rounds} rounds.")
+
     # ------------------------------------------------------------------
     # 保存 / 読み込み
     # ------------------------------------------------------------------
@@ -132,14 +178,21 @@ class ModelTrainer:
     def save(self, path: Path | None = None) -> None:
         path = path or settings.model_path
         path.parent.mkdir(parents=True, exist_ok=True)
-        joblib.dump(self.model, path)
+        payload = {"model": self.model, "place_model": self.place_model}
+        joblib.dump(payload, path)
         logger.info(f"Model saved to {path}")
 
     @classmethod
     def load(cls, path: Path | None = None) -> "ModelTrainer":
         path = path or settings.model_path
         instance = cls()
-        instance.model = joblib.load(path)
+        raw = joblib.load(path)
+        if isinstance(raw, dict):
+            instance.model = raw.get("model")
+            instance.place_model = raw.get("place_model")
+        else:
+            # 旧フォーマット（Booster 直接保存）に対する後方互換
+            instance.model = raw
         logger.info(f"Model loaded from {path}")
         return instance
 

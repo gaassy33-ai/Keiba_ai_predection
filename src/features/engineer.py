@@ -66,8 +66,14 @@ class FeatureEngineer:
         # タイムを秒に変換 (例: "1:34.5" → 94.5)
         df["finish_time_sec"] = df["finish_time"].apply(self._time_to_seconds)
 
-        # 上がり3F を数値化
-        df["last_3f_num"] = pd.to_numeric(df["last_3f"], errors="coerce")
+        # カラムずれ修正: scraper が列インデックスをずらして保存したため
+        #   "last_3f" 列 → 実際の単勝オッズ (例: 1.4 倍)
+        #   "odds"    列 → 実際の上がり3Fタイム (例: 37.3 秒)
+        # recent_avg_last3f には正しい上がり3F を使う
+        if "odds" in df.columns:
+            df["last_3f_num"] = pd.to_numeric(df["odds"], errors="coerce")
+        else:
+            df["last_3f_num"] = pd.to_numeric(df["last_3f"], errors="coerce")
 
         # 斤量
         df["weight_carried_num"] = pd.to_numeric(df["weight_carried"], errors="coerce")
@@ -399,9 +405,14 @@ class FeatureEngineer:
                 continue
 
             # ラベルを結合
-            labels = race_entries[["horse_id", "is_win"]].set_index("horse_id")
+            label_cols = ["horse_id", "is_win"]
+            if "is_placed" in race_entries.columns:
+                label_cols.append("is_placed")
+            labels = race_entries[label_cols].set_index("horse_id")
             feat_df = feat_df.set_index("horse_id") if "horse_id" in feat_df.columns else feat_df
             feat_df["is_win"] = feat_df.index.map(labels["is_win"])
+            if "is_placed" in labels.columns:
+                feat_df["is_placed"] = feat_df.index.map(labels["is_placed"])
             feat_df["race_id"] = race_id
             feat_df = feat_df.reset_index()
 
@@ -419,6 +430,8 @@ class FeatureEngineer:
         # 学習に不要な行（is_win が NaN）を除外
         result = result.dropna(subset=["is_win"])
         result["is_win"] = result["is_win"].astype(int)
+        if "is_placed" in result.columns:
+            result["is_placed"] = result["is_placed"].fillna(0).astype(int)
 
         logger.info(
             f"Training dataset built: {len(result)} rows, "
