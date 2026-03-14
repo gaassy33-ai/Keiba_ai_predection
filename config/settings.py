@@ -60,7 +60,8 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------
     notify_before_minutes: int = 20
     # 監視対象の競馬場コード（"05,06" のようなカンマ区切り文字列）
-    target_jyo_codes: str = "05,06,08,09"
+    # デフォルトは全10会場（空文字の場合も全会場対象）
+    target_jyo_codes: str = "01,02,03,04,05,06,07,08,09,10"
 
     @property
     def target_jyo_code_list(self) -> list[str]:

@@ -109,22 +109,53 @@ def _reply(reply_token: str, messages: list) -> None:
 # ① 今日の予想一覧（リッチメニュー「今日の予想」キーワード応答）
 # ---------------------------------------------------------------------------
 
-def _handle_today_forecast(reply_token: str) -> None:
-    """
-    朝バッチが生成した Flex Message キャッシュ（logs/flex_YYYY-MM-DD.json）を
-    即座に reply する。キャッシュがない場合はテキストで案内。
+_GITHUB_RAW = (
+    "https://raw.githubusercontent.com/gaassy33-ai/Keiba_ai_predection/main/docs"
+)
 
-    設計方針:
-      LINE Webhook には 30 秒のタイムアウトがあるため、
-      Selenium でその場スクレイピングは行わず朝バッチのキャッシュを再利用する。
+
+def _fetch_flex_data(target_date: date) -> dict | None:
+    """
+    Flex JSON を取得する。優先順:
+      1. ローカル logs/flex_{date}.json（Webhookサーバー上に存在する場合）
+      2. GitHub Pages docs/flex_{date}.json（朝バッチがコミット済みのもの）
     """
     import json
-    today = date.today()
-    cache_path = Path(f"logs/flex_{today.isoformat()}.json")
+    import urllib.request
 
-    if cache_path.exists():
+    date_str = target_date.isoformat()
+
+    # ① ローカルキャッシュ（Webhookと同一マシンでバッチを動かす場合）
+    local_path = Path(f"logs/flex_{date_str}.json")
+    if local_path.exists():
         try:
-            flex_data = json.loads(cache_path.read_text(encoding="utf-8"))
+            return json.loads(local_path.read_text(encoding="utf-8"))
+        except Exception as e:
+            logger.warning(f"ローカルキャッシュ読み込み失敗: {e}")
+
+    # ② GitHub raw から取得（朝バッチが docs/ にコミット済み）
+    url = f"{_GITHUB_RAW}/flex_{date_str}.json"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "keiba-webhook/1.0"})
+        with urllib.request.urlopen(req, timeout=8) as r:
+            return json.loads(r.read().decode("utf-8"))
+    except Exception as e:
+        logger.warning(f"GitHub rawからFlex取得失敗 ({url}): {e}")
+
+    return None
+
+
+def _handle_today_forecast(reply_token: str) -> None:
+    """
+    朝バッチが生成した Flex Message キャッシュを即座に reply する。
+    GitHub Actions 上で docs/flex_{date}.json に保存 → git commit → push され、
+    本Webhookサーバーが raw.githubusercontent.com から取得する。
+    """
+    today = date.today()
+    flex_data = _fetch_flex_data(today)
+
+    if flex_data:
+        try:
             alt = flex_data.get("altText", f"{today.strftime('%m/%d')} 競馬予想")
             _reply(reply_token, [
                 FlexMessage(
@@ -132,12 +163,12 @@ def _handle_today_forecast(reply_token: str) -> None:
                     contents=FlexContainer.from_dict(flex_data["contents"]),
                 )
             ])
-            logger.info(f"today_forecast: キャッシュから返信 ({cache_path})")
+            logger.info("today_forecast: Flex Messageを返信")
             return
         except Exception as e:
-            logger.warning(f"キャッシュ読み込み失敗: {e}")
+            logger.warning(f"Flex返信失敗: {e}")
 
-    # キャッシュなし → 案内テキスト
+    # 取得できなかった場合 → 案内テキスト
     weekday = ["月", "火", "水", "木", "金", "土", "日"][today.weekday()]
     _reply(reply_token, [TextMessage(text=(
         f"🏇 {today.month}/{today.day}（{weekday}）の予想はまだ準備中です。\n\n"

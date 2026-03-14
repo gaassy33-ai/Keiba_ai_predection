@@ -602,13 +602,18 @@ def main() -> None:
     logger.info("[5/5] Flex Message 構築・送信")
     flex_msg = build_flex_message(target_date, venue_results)
 
-    # Webhook キャッシュとして常に保存（「今日の予想」キーワード応答で使用）
+    # Flex JSON を docs/ に保存（git commit → GitHub Pages 経由で Webhook が取得）
+    # logs/ にも保存（ローカル確認用）
+    flex_json_str = json.dumps(flex_msg, ensure_ascii=False, indent=2)
     flex_cache = ROOT / "logs" / f"flex_{target_date}.json"
-    flex_cache.write_text(
-        json.dumps(flex_msg, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-    logger.info(f"  Flex キャッシュ保存: {flex_cache}")
+    flex_cache.parent.mkdir(parents=True, exist_ok=True)
+    flex_cache.write_text(flex_json_str, encoding="utf-8")
+    logger.info(f"  Flex キャッシュ保存 (logs): {flex_cache}")
+
+    docs_flex = ROOT / "docs" / f"flex_{target_date}.json"
+    docs_flex.parent.mkdir(parents=True, exist_ok=True)
+    docs_flex.write_text(flex_json_str, encoding="utf-8")
+    logger.info(f"  Flex キャッシュ保存 (docs): {docs_flex}")
 
     if args.dry_run:
         logger.info("  [dry-run] LINE 送信スキップ")

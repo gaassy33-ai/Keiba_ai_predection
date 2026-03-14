@@ -108,7 +108,7 @@ jobs:
           NETKEIBA_EMAIL: ${{ secrets.NETKEIBA_EMAIL }}
           NETKEIBA_PASSWORD: ${{ secrets.NETKEIBA_PASSWORD }}
           SELENIUM_HEADLESS: "true"
-          TARGET_JYO_CODES: ${{ secrets.TARGET_JYO_CODES || '05,06,08,09' }}
+          TARGET_JYO_CODES: ${{ secrets.TARGET_JYO_CODES || '01,02,03,04,05,06,07,08,09,10' }}
           CHROMEDRIVER_PATH: ${{ steps.setup-chrome.outputs.chromedriver-path }}
           TZ: "Asia/Tokyo"
         run: |
