@@ -6,11 +6,13 @@ daily_batch.py
     python daily_batch.py                    # 当日
     python daily_batch.py --date 2026-03-08  # 日付指定
 
-買い目（単勝 + 馬連のみ・回収率100%超券種に絞り込み）:
+買い目（回収率100%超券種に絞り込み）:
     - レース絞り込み: honmei_prob ≥ 0.15 かつ 信頼度差 ≥ 0.05
     - 単勝: ◎ 1点
     - 複勝: ◎ 1点（参考表示）
-    - 馬連: ◎ - EV上位3頭 最大3点（トリガミ除外）
+    - 馬連: ◎ - モデル上位5頭から EV 上位 最大3点（トリガミ除外）
+    - 3連複: ◎軸 × モデル上位5頭 → Harville降順 最大5点（合成オッズ<1.0はケン）
+    - 3連単: ◎1着固定 × モデル上位5頭 → Harville降順 最大5点（合成オッズ<1.0はケン）
 
 環境変数 (.env):
     LINE_CHANNEL_ACCESS_TOKEN
@@ -25,6 +27,7 @@ import json
 import sys
 import time
 from datetime import date
+from itertools import combinations as _comb, permutations as _perm
 from pathlib import Path
 
 import numpy as np
@@ -43,14 +46,16 @@ from config.settings import settings
 # ======================================================================
 # 定数
 # ======================================================================
-MIN_HONMEI_PROB    = 0.15   # ◎最低勝率（以下はケン）
-MIN_CONFIDENCE_GAP = 0.05   # ◎-対抗 信頼度差（以下はケン）
-EV_PARTNER_TOP_N   = 5      # EV計算の候補プール（上位5頭から選ぶ）
-MAX_BAREN_TICKETS  = 3      # 馬連最大点数
-TORIKAMI_THRESHOLD = 1.05   # トリガミ判定閾値（推定オッズがこれ未満は除外）
+MIN_HONMEI_PROB      = 0.15   # ◎最低勝率（以下はケン）
+MIN_CONFIDENCE_GAP   = 0.05   # ◎-対抗 信頼度差（以下はケン）
+EV_PARTNER_TOP_N     = 5      # EV計算の候補プール（上位5頭）
+MAX_BAREN_TICKETS    = 3      # 馬連最大点数
+MAX_SANRENFUKU_TICKETS = 5    # 3連複最大点数
+MAX_SANRENTAN_TICKETS  = 5    # 3連単最大点数
+TORIKAMI_THRESHOLD   = 1.05   # トリガミ判定閾値（推定オッズがこれ未満は除外）
 
 # JRA 控除率
-JRA_TAKE = {"馬連": 0.225}
+JRA_TAKE = {"馬連": 0.225, "3連複": 0.225, "3連単": 0.275}
 
 VENUE_COLORS: dict[str, str] = {
     "札幌": "#1a5276", "函館": "#154360", "福島": "#4a7c4e",
@@ -99,6 +104,22 @@ def _harville(probs: list[float], order: list[int]) -> float:
 
 def _prob_quinella(probs: list[float], i: int, j: int) -> float:
     return _harville(probs, [i, j]) + _harville(probs, [j, i])
+
+
+def _prob_trio(probs: list[float], i: int, j: int, k: int) -> float:
+    """3連複確率（i,j,k が任意順で1〜3着）"""
+    return sum(_harville(probs, list(o)) for o in _perm([i, j, k]))
+
+
+def _prob_sanrentan(probs: list[float], i: int, j: int, k: int) -> float:
+    """3連単確率（i→j→k の順）"""
+    return _harville(probs, [i, j, k])
+
+
+def _synth_odds(odds_list: list[float]) -> float:
+    """合成オッズ（全点的中でのトータル期待値）"""
+    denom = sum(1.0 / max(o, 1e-9) for o in odds_list)
+    return 1.0 / denom if denom > 0 else 0.0
 
 
 def _est_odds(prob: float, bet_type: str) -> float:
@@ -280,24 +301,45 @@ def predict_and_bet(
     race_num_str = f"{int(race_info.race_id[-2:])}R"
 
     result = {
-        "race_id":       race_info.race_id,
-        "race_name":     race_info.race_name,
-        "race_num":      race_num_str,
-        "is_buy":        False,
-        "honmei_num":    honmei_num,
-        "honmei_name":   honmei_name,
-        "honmei_prob":   round(honmei_prob, 3),
-        "baren_partners": [],
+        "race_id":            race_info.race_id,
+        "race_name":          race_info.race_name,
+        "race_num":           race_num_str,
+        "is_buy":             False,
+        "honmei_num":         honmei_num,
+        "honmei_name":        honmei_name,
+        "honmei_prob":        round(honmei_prob, 3),
+        "baren_partners":     [],
+        "sanrenfuku_combos":  [],   # [(num_a, num_b), ...]
+        "sanrentan_combos":   [],   # [(num_2nd, num_3rd), ...]
     }
 
     if is_skip:
         return result
 
-    # --- EV 相手選び（馬連用） ---
+    # --- 共通: オッズマップ・市場確率 ---
     odds_map = {e.horse_id: e.odds for e in entries if e.odds}
-    candidates = pred_df[pred_df["horse_id"] != honmei_row["horse_id"]].head(EV_PARTNER_TOP_N)
+    all_ids      = pred_df["horse_id"].tolist()
+    all_odds_raw = [_parse_odds(odds_map.get(hid, float("nan"))) for hid in all_ids]
+    valid_pairs  = [(hid, o) for hid, o in zip(all_ids, all_odds_raw)
+                    if not np.isnan(o) and o > 1.0]
+    mkt_probs: list[float] = []
+    valid_ids: list[str]   = []
+    if valid_pairs:
+        vids, vodds = zip(*valid_pairs)
+        valid_ids   = list(vids)
+        mkt_probs   = _market_probs(list(vodds)).tolist()
+
+    def vidx(horse_id: str) -> int | None:
+        return valid_ids.index(horse_id) if horse_id in valid_ids else None
+
+    hi = vidx(honmei_row["horse_id"])
+
+    # --- モデル上位 EV_PARTNER_TOP_N 頭（◎除く）---
+    partner_rows = pred_df[pred_df["horse_id"] != honmei_row["horse_id"]].head(EV_PARTNER_TOP_N)
+
+    # --- 馬連: EV スコア上位3頭・トリガミ除外 ---
     scored = []
-    for _, row in candidates.iterrows():
+    for _, row in partner_rows.iterrows():
         hid  = str(row["horse_id"])
         prob = float(row["win_prob"])
         odds = _parse_odds(odds_map.get(hid, 5.0))
@@ -305,26 +347,9 @@ def predict_and_bet(
             odds = 5.0
         scored.append((hid, prob * odds, str(int(row["horse_number"]))))
     scored.sort(key=lambda x: x[1], reverse=True)
-    ev_top = scored[:MAX_BAREN_TICKETS]
 
-    # --- 馬連 トリガミフィルタ ---
-    all_ids  = pred_df["horse_id"].tolist()
-    all_odds_raw = [_parse_odds(odds_map.get(hid, float("nan"))) for hid in all_ids]
-    valid_pairs = [(hid, o) for hid, o in zip(all_ids, all_odds_raw)
-                   if not np.isnan(o) and o > 1.0]
-    mkt_probs: list[float] = []
-    valid_ids: list[str]   = []
-    if valid_pairs:
-        vids, vodds = zip(*valid_pairs)
-        valid_ids  = list(vids)
-        mkt_probs  = _market_probs(list(vodds)).tolist()
-
-    def vidx(horse_id: str) -> int | None:
-        return valid_ids.index(horse_id) if horse_id in valid_ids else None
-
-    hi = vidx(honmei_row["horse_id"])
     baren_nums: list[str] = []
-    for hid, _ev, num in ev_top:
+    for hid, _ev, num in scored[:MAX_BAREN_TICKETS]:
         vi = vidx(hid)
         if hi is not None and vi is not None and mkt_probs:
             e_odds = _est_odds(_prob_quinella(mkt_probs, hi, vi), "馬連")
@@ -332,8 +357,58 @@ def predict_and_bet(
                 continue
         baren_nums.append(num)
 
-    result["is_buy"]         = True
-    result["baren_partners"] = baren_nums
+    # --- 3連複: ◎軸 × 上位5頭 → C(5,2) → Harville降順 最大5点 ---
+    pool: list[tuple[str, int]] = []   # (horse_number_str, valid_ids_index)
+    for _, row in partner_rows.iterrows():
+        vi = vidx(str(row["horse_id"]))
+        if vi is not None:
+            pool.append((str(int(row["horse_number"])), vi))
+
+    sf_all: list[tuple[str, str, float]] = []
+    for (num_a, vi_a), (num_b, vi_b) in _comb(pool, 2):
+        if hi is not None and mkt_probs:
+            p    = _prob_trio(mkt_probs, hi, vi_a, vi_b)
+            e_od = _est_odds(p, "3連複")
+            if e_od < TORIKAMI_THRESHOLD:
+                continue
+        else:
+            e_od = 999.0
+        sf_all.append((num_a, num_b, e_od))
+
+    sf_all.sort(key=lambda x: -x[2])
+    sf_sel = sf_all[:MAX_SANRENFUKU_TICKETS]
+    sf_est = [e for *_, e in sf_sel]
+    sanrenfuku_combos = (
+        [(a, b) for a, b, _ in sf_sel]
+        if (not sf_est or _synth_odds(sf_est) >= 1.0)
+        else []
+    )
+
+    # --- 3連単: ◎1着固定 × 上位5頭 → P(5,2) → Harville降順 最大5点 ---
+    st_all: list[tuple[str, str, float]] = []
+    for (num_2, vi_2), (num_3, vi_3) in _perm(pool, 2):
+        if hi is not None and mkt_probs:
+            p    = _prob_sanrentan(mkt_probs, hi, vi_2, vi_3)
+            e_od = _est_odds(p, "3連単")
+            if e_od < TORIKAMI_THRESHOLD:
+                continue
+        else:
+            e_od = 999.0
+        st_all.append((num_2, num_3, e_od))
+
+    st_all.sort(key=lambda x: -x[2])
+    st_sel = st_all[:MAX_SANRENTAN_TICKETS]
+    st_est = [e for *_, e in st_sel]
+    sanrentan_combos = (
+        [(n2, n3) for n2, n3, _ in st_sel]
+        if (not st_est or _synth_odds(st_est) >= 1.0)
+        else []
+    )
+
+    result["is_buy"]            = True
+    result["baren_partners"]    = baren_nums
+    result["sanrenfuku_combos"] = sanrenfuku_combos
+    result["sanrentan_combos"]  = sanrentan_combos
     return result
 
 
@@ -369,11 +444,34 @@ def _race_row_component(race_result: dict | None, race_num: int) -> list[dict]:
         # 購入レース
         hon_num  = race_result["honmei_num"]
         hon_name = race_result["honmei_name"]
-        partners = race_result["baren_partners"]
+        partners = race_result.get("baren_partners", [])
+        sf_combos = race_result.get("sanrenfuku_combos", [])
+        st_combos = race_result.get("sanrentan_combos", [])
+
         baren_str = (
-            f"馬連: {hon_num} - {', '.join(partners)}"
-            if partners else "馬連: なし（単複のみ）"
+            f"馬連: {hon_num}-{' / '.join(partners)}"
+            if partners else "馬連: なし"
         )
+        sf_str = (
+            "3連複: " + " / ".join(f"{hon_num}-{a}-{b}" for a, b in sf_combos)
+            if sf_combos else "3連複: なし"
+        )
+        st_str = (
+            "3連単: " + " / ".join(f"{hon_num}→{n2}→{n3}" for n2, n3 in st_combos)
+            if st_combos else "3連単: なし"
+        )
+
+        detail_items = [
+            {"type": "text", "text": f"◎{hon_num} {hon_name}（単・複）",
+             "size": "sm", "weight": "bold", "color": "#1a5533", "wrap": True},
+            {"type": "text", "text": baren_str,
+             "size": "xs", "color": "#555555", "margin": "xs", "wrap": True},
+            {"type": "text", "text": sf_str,
+             "size": "xs", "color": "#4a4a8a", "margin": "xs", "wrap": True},
+            {"type": "text", "text": st_str,
+             "size": "xs", "color": "#7a3a3a", "margin": "xs", "wrap": True},
+        ]
+
         body_content = {
             "type": "box",
             "layout": "horizontal",
@@ -389,19 +487,7 @@ def _race_row_component(race_result: dict | None, race_num: int) -> list[dict]:
                     "type": "box",
                     "layout": "vertical",
                     "flex": 1, "margin": "md",
-                    "contents": [
-                        {
-                            "type": "text",
-                            "text": f"◎{hon_num} {hon_name}（単・複）",
-                            "size": "sm", "weight": "bold",
-                            "color": "#1a5533", "wrap": True,
-                        },
-                        {
-                            "type": "text", "text": baren_str,
-                            "size": "xs", "color": "#555555",
-                            "margin": "xs",
-                        },
-                    ],
+                    "contents": detail_items,
                 },
             ],
         }
@@ -642,13 +728,17 @@ def main() -> None:
             venue_results[venue].append(result)
 
             if result and result["is_buy"]:
-                partners_str = ", ".join(result["baren_partners"])
+                hon = result['honmei_num']
+                baren_str = "-".join([hon] + result["baren_partners"]) or "なし"
+                sf_str = " / ".join(f"{hon}-{a}-{b}" for a, b in result["sanrenfuku_combos"]) or "なし"
+                st_str = " / ".join(f"{hon}→{n2}→{n3}" for n2, n3 in result["sanrentan_combos"]) or "なし"
                 logger.info(
-                    f"    {result['race_num']:>3}  ◎{result['honmei_num']} "
-                    f"{result['honmei_name']} "
-                    f"(prob={result['honmei_prob']:.2%})  "
-                    f"馬連: {result['honmei_num']}-{partners_str}"
+                    f"    {result['race_num']:>3}  ◎{hon} {result['honmei_name']}"
+                    f"  (prob={result['honmei_prob']:.2%})"
                 )
+                logger.info(f"          馬連: {baren_str}")
+                logger.info(f"          3連複: {sf_str}")
+                logger.info(f"          3連単: {st_str}")
             elif result:
                 logger.info(f"    {result['race_num']:>3}  見送り")
 

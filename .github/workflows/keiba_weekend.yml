@@ -196,7 +196,9 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add docs/predictions_log.csv docs/stats.html
+          # ファイルが存在する場合のみ add（存在しない場合はスキップ）
+          [ -f docs/predictions_log.csv ] && git add docs/predictions_log.csv || true
+          [ -f docs/stats.html ]          && git add docs/stats.html          || true
           git diff --cached --quiet || git commit -m "chore: 週末成績集計 [skip ci]"
           git push || true
 
