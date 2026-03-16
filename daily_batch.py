@@ -50,12 +50,13 @@ MIN_HONMEI_PROB      = 0.25   # ◎最低勝率（以下はケン）※バック
 MIN_CONFIDENCE_GAP   = 0.05   # ◎-対抗 信頼度差（以下はケン）
 EV_PARTNER_TOP_N     = 5      # EV計算の候補プール（上位5頭）
 MAX_BAREN_TICKETS    = 3      # 馬連最大点数
+MAX_UMATAN_TICKETS   = 3      # 馬単最大点数
 MAX_SANRENFUKU_TICKETS = 5    # 3連複最大点数
 MAX_SANRENTAN_TICKETS  = 5    # 3連単最大点数
 TORIKAMI_THRESHOLD   = 1.05   # トリガミ判定閾値（推定オッズがこれ未満は除外）
 
 # JRA 控除率
-JRA_TAKE = {"馬連": 0.225, "3連複": 0.225, "3連単": 0.275}
+JRA_TAKE = {"馬連": 0.225, "馬単": 0.25, "3連複": 0.225, "3連単": 0.275}
 
 VENUE_COLORS: dict[str, str] = {
     "札幌": "#1a5276", "函館": "#154360", "福島": "#4a7c4e",
@@ -158,7 +159,9 @@ def load_history() -> pd.DataFrame:
 PREDICTIONS_LOG = ROOT / "docs" / "predictions_log.csv"
 PREDICTIONS_LOG_COLS = [
     "date", "race_id", "race_name", "honmei_num", "honmei_name",
-    "honmei_prob", "is_buy", "hit", "payout",
+    "honmei_prob", "is_buy",
+    "tansho_hit", "tansho_ret",
+    "umatan_str", "umatan_hit", "umatan_ret",
 ]
 
 
@@ -176,16 +179,23 @@ def _save_prediction_log(
         for r in results:
             if r is None:
                 continue
+            hon = r["honmei_num"]
+            um_str = ",".join(
+                f"{hon}\u2192{p}" for p in r.get("umatan_partners", [])
+            )
             rows.append({
                 "date":         str(target_date),
                 "race_id":      r["race_id"],
                 "race_name":    r.get("race_name", ""),
-                "honmei_num":   r["honmei_num"],
+                "honmei_num":   hon,
                 "honmei_name":  r["honmei_name"],
                 "honmei_prob":  r["honmei_prob"],
                 "is_buy":       r["is_buy"],
-                "hit":          "",
-                "payout":       "",
+                "tansho_hit":   "",
+                "tansho_ret":   "",
+                "umatan_str":   um_str,
+                "umatan_hit":   "",
+                "umatan_ret":   "",
             })
 
     if not rows:
@@ -309,6 +319,7 @@ def predict_and_bet(
         "honmei_name":        honmei_name,
         "honmei_prob":        round(honmei_prob, 3),
         "baren_partners":     [],
+        "umatan_partners":    [],   # [(num_2nd), ...] ◎1着固定の相手馬番リスト
         "sanrenfuku_combos":  [],   # [(num_a, num_b), ...]
         "sanrentan_combos":   [],   # [(num_2nd, num_3rd), ...]
     }
@@ -356,6 +367,27 @@ def predict_and_bet(
             if e_odds < TORIKAMI_THRESHOLD:
                 continue
         baren_nums.append(num)
+
+    # --- 馬単: ◎1着固定 × 上位EV頭 → Harville降順 最大3点 ---
+    um_all: list[tuple[str, float]] = []
+    for hid, _ev, num in scored:
+        vi = vidx(hid)
+        if hi is not None and vi is not None and mkt_probs:
+            e_od = _est_odds(_harville(mkt_probs, [hi, vi]), "馬単")
+            if e_od < TORIKAMI_THRESHOLD:
+                continue
+        else:
+            e_od = 999.0
+        um_all.append((num, e_od))
+
+    um_all.sort(key=lambda x: -x[1])
+    um_sel = um_all[:MAX_UMATAN_TICKETS]
+    um_est = [e for _, e in um_sel]
+    umatan_partners = (
+        [num for num, _ in um_sel]
+        if (not um_est or _synth_odds(um_est) >= 1.0)
+        else []
+    )
 
     # --- 3連複: ◎軸 × 上位5頭 → C(5,2) → Harville降順 最大5点 ---
     pool: list[tuple[str, int]] = []   # (horse_number_str, valid_ids_index)
@@ -407,6 +439,7 @@ def predict_and_bet(
 
     result["is_buy"]            = True
     result["baren_partners"]    = baren_nums
+    result["umatan_partners"]   = umatan_partners
     result["sanrenfuku_combos"] = sanrenfuku_combos
     result["sanrentan_combos"]  = sanrentan_combos
     return result
@@ -444,13 +477,18 @@ def _race_row_component(race_result: dict | None, race_num: int) -> list[dict]:
         # 購入レース
         hon_num  = race_result["honmei_num"]
         hon_name = race_result["honmei_name"]
-        partners = race_result.get("baren_partners", [])
-        sf_combos = race_result.get("sanrenfuku_combos", [])
-        st_combos = race_result.get("sanrentan_combos", [])
+        partners    = race_result.get("baren_partners", [])
+        um_partners = race_result.get("umatan_partners", [])
+        sf_combos   = race_result.get("sanrenfuku_combos", [])
+        st_combos   = race_result.get("sanrentan_combos", [])
 
         baren_str = (
             f"馬連: {hon_num}-{' / '.join(partners)}"
             if partners else "馬連: なし"
+        )
+        umatan_str = (
+            "馬単: " + " / ".join(f"{hon_num}→{p}" for p in um_partners)
+            if um_partners else "馬単: なし"
         )
         sf_str = (
             "3連複: " + " / ".join(f"{hon_num}-{a}-{b}" for a, b in sf_combos)
@@ -466,6 +504,8 @@ def _race_row_component(race_result: dict | None, race_num: int) -> list[dict]:
              "size": "sm", "weight": "bold", "color": "#1a5533", "wrap": True},
             {"type": "text", "text": baren_str,
              "size": "xs", "color": "#555555", "margin": "xs", "wrap": True},
+            {"type": "text", "text": umatan_str,
+             "size": "xs", "color": "#7a5500", "margin": "xs", "wrap": True},
             {"type": "text", "text": sf_str,
              "size": "xs", "color": "#4a4a8a", "margin": "xs", "wrap": True},
             {"type": "text", "text": st_str,

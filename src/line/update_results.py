@@ -1,8 +1,9 @@
 """
-predictions_log.csv の hit / payout を実際のレース結果で更新する。
+predictions_log.csv の tansho_hit/ret, umatan_hit/ret を
+実際のレース結果で更新する。
 
 週次まとめバッチ（日曜 17:00 JST）に組み込み、
-当週分の is_buy=True レースについて単勝結果を取得して CSV を更新し、
+当週分の is_buy=True レースについて結果を取得して CSV を更新し、
 stats.html を再生成する。
 
 実行:
@@ -25,20 +26,30 @@ PREDICTIONS_LOG = ROOT / "docs" / "predictions_log.csv"
 
 
 def update_results() -> None:
-    """
-    predictions_log.csv のうち hit が空欄の行に対して
-    db.netkeiba.com から実際の着順・払戻を取得して更新する。
-    """
     if not PREDICTIONS_LOG.exists():
         logger.info("predictions_log.csv が存在しません。スキップします。")
         return
 
     df = pd.read_csv(PREDICTIONS_LOG, dtype=str)
 
-    # 更新対象: is_buy=True かつ hit が未入力の行
+    # 旧スキーマ（hit/payout列）を新スキーマに変換
+    if "hit" in df.columns and "tansho_hit" not in df.columns:
+        df["tansho_hit"] = df["hit"]
+        df["tansho_ret"] = df.get("payout", "")
+        df["umatan_str"] = ""
+        df["umatan_hit"] = ""
+        df["umatan_ret"] = ""
+        df = df.drop(columns=[c for c in ("hit", "payout") if c in df.columns])
+
+    # 新スキーマ列が不足している場合は補完
+    for col in ("tansho_hit", "tansho_ret", "umatan_str", "umatan_hit", "umatan_ret"):
+        if col not in df.columns:
+            df[col] = ""
+
+    # 更新対象: is_buy=True かつ tansho_hit が未入力
     target_mask = (
         (df["is_buy"].str.lower() == "true") &
-        (df["hit"].isna() | (df["hit"] == ""))
+        (df["tansho_hit"].isna() | (df["tansho_hit"] == ""))
     )
     targets = df[target_mask].copy()
 
@@ -53,66 +64,98 @@ def update_results() -> None:
 
     updated = 0
     for idx, row in targets.iterrows():
-        race_id = str(row["race_id"])
+        race_id    = str(row["race_id"])
         honmei_num = str(row["honmei_num"]).strip()
+        umatan_str = str(row.get("umatan_str", "") or "")
+
         try:
-            # 着順データ取得（静的HTML: db.netkeiba.com）
             result_df = scraper.fetch_race_result(race_id)
             if result_df.empty:
                 logger.warning(f"  {race_id}: 結果取得失敗（空DataFrame）")
                 continue
 
-            # 1着馬の馬番を取得
-            winner_rows = result_df[
-                pd.to_numeric(result_df.get("finish_position", pd.Series()), errors="coerce") == 1
-            ]
-            if winner_rows.empty:
-                # finish_position 列名が違う場合のフォールバック
-                pos_col = next(
-                    (c for c in result_df.columns
-                     if "着" in c or "finish" in c.lower() or "pos" in c.lower()),
-                    None
-                )
-                if pos_col:
-                    winner_rows = result_df[
-                        pd.to_numeric(result_df[pos_col], errors="coerce") == 1
-                    ]
-
-            if winner_rows.empty:
-                logger.warning(f"  {race_id}: 1着馬を特定できず")
+            fp_col = next(
+                (c for c in result_df.columns
+                 if "finish" in c.lower() or "着" in c or "pos" in c.lower()),
+                None
+            )
+            if fp_col is None:
+                logger.warning(f"  {race_id}: 着順列が見つからず")
                 continue
 
-            winner_num = str(int(pd.to_numeric(
-                winner_rows.iloc[0].get("horse_number", winner_rows.iloc[0].get("馬番", "0")),
-                errors="coerce"
-            ) or 0))
+            result_df["_fp"] = pd.to_numeric(result_df[fp_col], errors="coerce")
 
-            hit = (winner_num == honmei_num)
+            num_col = next(
+                (c for c in result_df.columns
+                 if "horse_number" in c.lower() or "馬番" in c),
+                None
+            )
+            if num_col is None:
+                logger.warning(f"  {race_id}: 馬番列が見つからず")
+                continue
 
-            # 単勝払戻取得
-            payout_val = 0
+            def _num(fp):
+                rows = result_df[result_df["_fp"] == fp]
+                return str(int(pd.to_numeric(rows.iloc[0][num_col], errors="coerce") or 0)) \
+                    if not rows.empty else ""
+
+            winner_num = _num(1)
+            second_num = _num(2)
+
+            # 単勝的中
+            tansho_hit = (winner_num == honmei_num)
+
+            # 払戻取得
+            tansho_ret = 0
+            umatan_ret = 0
             try:
                 payouts = scraper.fetch_race_payouts(race_id)
-                tansho = payouts.get("単勝", [])
-                if tansho:
-                    # 本命馬番の単勝払戻を探す
-                    for entry in tansho:
-                        nums = [str(n) for n in entry.get("horses", [])]
-                        if honmei_num in nums:
-                            payout_val = int(entry.get("payout", 0))
-                            break
-                    # 見つからなければ1着馬の払戻を使用
-                    if payout_val == 0 and hit and tansho:
-                        payout_val = int(tansho[0].get("payout", 0))
+
+                # 単勝払戻
+                for entry in payouts.get("単勝", []):
+                    if honmei_num in [str(n) for n in entry.get("horses", [])]:
+                        tansho_ret = int(entry.get("payout", 0))
+                        break
+                if tansho_ret == 0 and tansho_hit:
+                    entries = payouts.get("単勝", [])
+                    if entries:
+                        tansho_ret = int(entries[0].get("payout", 0))
+
+                # 馬単払戻（◎1着かつ相手が2着のとき）
+                if tansho_hit and second_num and umatan_str:
+                    bought = {
+                        combo.replace("→", "-")
+                        for combo in umatan_str.split(",")
+                        if combo.strip()
+                    }
+                    actual_key = f"{honmei_num}-{second_num}"
+                    if actual_key in bought:
+                        for entry in payouts.get("馬単", []):
+                            horses = [str(n) for n in entry.get("horses", [])]
+                            if horses == [honmei_num, second_num]:
+                                umatan_ret = int(entry.get("payout", 0))
+                                break
+
             except Exception as e:
                 logger.warning(f"  {race_id}: 払戻取得失敗 ({e})")
 
-            df.at[idx, "hit"] = str(hit)
-            df.at[idx, "payout"] = str(payout_val)
+            umatan_hit = bool(
+                tansho_hit and second_num and umatan_str and
+                f"{honmei_num}-{second_num}" in {
+                    c.replace("→", "-") for c in umatan_str.split(",") if c.strip()
+                }
+            )
+
+            df.at[idx, "tansho_hit"] = str(tansho_hit)
+            df.at[idx, "tansho_ret"] = str(tansho_ret)
+            df.at[idx, "umatan_hit"] = str(umatan_hit)
+            df.at[idx, "umatan_ret"] = str(umatan_ret)
             updated += 1
+
+            um_label = f"馬単{'✅' if umatan_hit else '❌'}(¥{umatan_ret:,})" if umatan_str else ""
             logger.info(
-                f"  {race_id}: ◎{honmei_num} {'✅ 的中' if hit else '❌ 外れ'}"
-                f"  払戻={payout_val:,}円"
+                f"  {race_id}: ◎{honmei_num} 単勝{'✅' if tansho_hit else '❌'}(¥{tansho_ret:,})"
+                + (f"  {um_label}" if um_label else "")
             )
             time.sleep(2)
 
@@ -124,8 +167,6 @@ def update_results() -> None:
     if updated > 0:
         df.to_csv(PREDICTIONS_LOG, index=False)
         logger.info(f"predictions_log.csv 更新完了 ({updated} 件)")
-
-        # stats.html 再生成
         try:
             from src.line.stats_page import generate_stats_page
             generate_stats_page()
