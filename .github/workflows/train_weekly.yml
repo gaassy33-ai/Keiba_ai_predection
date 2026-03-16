@@ -1,9 +1,8 @@
 name: モデル週次再学習
 
 on:
-  # 毎週月曜 02:00 JST（日曜レース結果が出揃った後）
-  schedule:
-    - cron: "0 17 * * 0"   # 日 17:00 UTC = 月 02:00 JST
+  # スケジュール実行は無効（現行モデルを固定運用中）
+  # モデル再学習が必要な場合は GitHub Actions から手動実行すること
   workflow_dispatch:
 
 jobs:
