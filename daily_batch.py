@@ -541,11 +541,18 @@ def _race_row_component(race_result: dict | None, race_num: int) -> list[dict]:
              "size": "xs", "color": "#555555", "margin": "xs", "wrap": True},
             {"type": "text", "text": umatan_str,
              "size": "xs", "color": "#7a5500", "margin": "xs", "wrap": True},
-            {"type": "text", "text": sf_str,
-             "size": "xs", "color": "#4a4a8a", "margin": "xs", "wrap": True},
-            {"type": "text", "text": st_str,
-             "size": "xs", "color": "#7a3a3a", "margin": "xs", "wrap": True},
         ]
+        # 3連複・3連単はコンボがある場合のみ表示（NAR では無効のため非表示）
+        if sf_combos:
+            detail_items.append(
+                {"type": "text", "text": sf_str,
+                 "size": "xs", "color": "#4a4a8a", "margin": "xs", "wrap": True}
+            )
+        if st_combos:
+            detail_items.append(
+                {"type": "text", "text": st_str,
+                 "size": "xs", "color": "#7a3a3a", "margin": "xs", "wrap": True}
+            )
 
         body_content = {
             "type": "box",
