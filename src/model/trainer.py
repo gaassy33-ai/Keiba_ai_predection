@@ -246,19 +246,22 @@ class ModelTrainer:
     # 保存 / 読み込み
     # ------------------------------------------------------------------
 
-    def save(self, path: Path | None = None) -> None:
-        path = path or settings.model_path
+    def save(self, path: Path | None = None, org: str = "jra") -> None:
+        if path is None:
+            path = settings.nar_model_path if org == "nar" else settings.model_path
         path.parent.mkdir(parents=True, exist_ok=True)
         payload = {"model": self.model, "place_model": self.place_model}
         joblib.dump(payload, path)
         logger.info(f"Model saved to {path}")
 
         # 特徴量重要度を JSON でも保存（改善③）
-        self.save_feature_importance(path.parent / "feature_importance.json")
+        importance_name = f"{org}_feature_importance.json" if org != "jra" else "feature_importance.json"
+        self.save_feature_importance(path.parent / importance_name)
 
     @classmethod
-    def load(cls, path: Path | None = None) -> "ModelTrainer":
-        path = path or settings.model_path
+    def load(cls, path: Path | None = None, org: str = "jra") -> "ModelTrainer":
+        if path is None:
+            path = settings.nar_model_path if org == "nar" else settings.model_path
         instance = cls()
         raw = joblib.load(path)
         if isinstance(raw, dict):
@@ -267,7 +270,7 @@ class ModelTrainer:
         else:
             # 旧フォーマット（Booster 直接保存）に対する後方互換
             instance.model = raw
-        logger.info(f"Model loaded from {path}")
+        logger.info(f"Model loaded from {path} (org={org})")
         return instance
 
 

@@ -40,7 +40,9 @@ sys.path.insert(0, str(ROOT))
 
 from src.features.engineer import FeatureEngineer
 from src.model.trainer import ModelTrainer
-from src.scraper.netkeiba_scraper import NetkeibaScraper, RaceInfo
+from src.scraper.base_scraper import RaceInfo
+from src.scraper.netkeiba_scraper import NetkeibaScraper
+from src.scraper.nar_scraper import NARScraper
 from config.settings import settings
 
 # ======================================================================
@@ -58,13 +60,39 @@ TORIKAMI_THRESHOLD   = 1.05   # トリガミ判定閾値（推定オッズがこ
 # JRA 控除率
 JRA_TAKE = {"馬連": 0.225, "馬単": 0.25, "3連複": 0.225, "3連単": 0.275}
 
+# ── NAR 専用パラメータ ──────────────────────────────────────────
+# バックテスト結果（5,089レース）より最適化:
+#   prob≥0.35: ROI 181.9%（0.25-0.35帯は赤字）
+#   馬単 ROI 157.3% > 馬連 144.9% > 複勝 118.8% > 単勝 100.1%
+#   3連複/3連単は未検証のため除外
+NAR_MIN_HONMEI_PROB  = 0.35   # JRA=0.25 より高い閾値
+NAR_WIN_BLEND        = 0.85   # win_model の重み（JRA=0.70）馬単重視のため勝ちモデルを優先
+NAR_TAKE = {"馬連": 0.25, "馬単": 0.25}  # NAR 控除率（JRA より高め）
+
 VENUE_COLORS: dict[str, str] = {
+    # JRA
     "札幌": "#1a5276", "函館": "#154360", "福島": "#4a7c4e",
     "新潟": "#8b4513", "東京": "#1a472a", "中山": "#8b0000",
     "中京": "#b8860b", "京都": "#6b4c9a", "阪神": "#1b3a6b",
     "小倉": "#2f6b9a",
+    # NAR（地方競馬）
+    "門別": "#2e4057", "盛岡": "#4d7c5f", "水沢": "#5c6b4a",
+    "浦和": "#7b3f20", "船橋": "#1f5f7a", "大井": "#2c3e50",
+    "川崎": "#6c3b8a", "金沢": "#7a6400", "笠松": "#3d5a3e",
+    "名古屋": "#8b2500", "園田": "#4a5e6b", "姫路": "#5e3a6b",
+    "高知": "#4a7c4e", "佐賀": "#6b4c2a", "荒尾": "#5c4a2a",
+    "中津": "#4a3a6b", "帯広": "#1a3a5c",
 }
 DEFAULT_COLOR = "#333333"
+
+# ======================================================================
+# org 判定（平日→NAR, 土日→JRA）
+# ======================================================================
+
+def get_org(target_date: date) -> str:
+    """平日（月〜金）は NAR、土日は JRA を返す。"""
+    return "nar" if target_date.weekday() < 5 else "jra"
+
 
 # ======================================================================
 # ロガー初期化
@@ -123,8 +151,9 @@ def _synth_odds(odds_list: list[float]) -> float:
     return 1.0 / denom if denom > 0 else 0.0
 
 
-def _est_odds(prob: float, bet_type: str) -> float:
-    take = JRA_TAKE.get(bet_type, 0.225)
+def _est_odds(prob: float, bet_type: str, org: str = "jra") -> float:
+    take_table = NAR_TAKE if org == "nar" else JRA_TAKE
+    take = take_table.get(bet_type, 0.225)
     return (1.0 - take) / max(prob, 0.001)
 
 
@@ -225,6 +254,7 @@ def predict_and_bet(
     race_info: RaceInfo,
     fe: FeatureEngineer,
     trainer: ModelTrainer,
+    org: str = "jra",
 ) -> dict | None:
     """
     RaceInfo を受け取り、予測と買い目を生成する。
@@ -287,7 +317,8 @@ def predict_and_bet(
     win_probs = trainer.model.predict(X)
     if trainer.place_model is not None:
         place_probs = trainer.place_model.predict(X)
-        probs = 0.7 * win_probs + 0.3 * place_probs
+        win_blend = NAR_WIN_BLEND if org == "nar" else 0.7
+        probs = win_blend * win_probs + (1.0 - win_blend) * place_probs
     else:
         probs = win_probs
 
@@ -298,8 +329,9 @@ def predict_and_bet(
     # --- レース絞り込み ---
     honmei_prob = float(pred_df.iloc[0]["win_prob"])
     taikou_prob = float(pred_df.iloc[1]["win_prob"]) if len(pred_df) > 1 else 0.0
+    prob_threshold = NAR_MIN_HONMEI_PROB if org == "nar" else MIN_HONMEI_PROB
     is_skip = (
-        honmei_prob < MIN_HONMEI_PROB
+        honmei_prob < prob_threshold
         or (honmei_prob - taikou_prob) < MIN_CONFIDENCE_GAP
     )
 
@@ -363,7 +395,7 @@ def predict_and_bet(
     for hid, _ev, num in scored[:MAX_BAREN_TICKETS]:
         vi = vidx(hid)
         if hi is not None and vi is not None and mkt_probs:
-            e_odds = _est_odds(_prob_quinella(mkt_probs, hi, vi), "馬連")
+            e_odds = _est_odds(_prob_quinella(mkt_probs, hi, vi), "馬連", org=org)
             if e_odds < TORIKAMI_THRESHOLD:
                 continue
         baren_nums.append(num)
@@ -373,7 +405,7 @@ def predict_and_bet(
     for hid, _ev, num in scored:
         vi = vidx(hid)
         if hi is not None and vi is not None and mkt_probs:
-            e_od = _est_odds(_harville(mkt_probs, [hi, vi]), "馬単")
+            e_od = _est_odds(_harville(mkt_probs, [hi, vi]), "馬単", org=org)
             if e_od < TORIKAMI_THRESHOLD:
                 continue
         else:
@@ -389,53 +421,56 @@ def predict_and_bet(
         else []
     )
 
-    # --- 3連複: ◎軸 × 上位5頭 → C(5,2) → Harville降順 最大5点 ---
+    # --- 3連複 / 3連単: NAR は未検証のため除外 ---
     pool: list[tuple[str, int]] = []   # (horse_number_str, valid_ids_index)
-    for _, row in partner_rows.iterrows():
-        vi = vidx(str(row["horse_id"]))
-        if vi is not None:
-            pool.append((str(int(row["horse_number"])), vi))
+    sanrenfuku_combos: list[tuple[str, str]] = []
+    sanrentan_combos:  list[tuple[str, str]] = []
 
-    sf_all: list[tuple[str, str, float]] = []
-    for (num_a, vi_a), (num_b, vi_b) in _comb(pool, 2):
-        if hi is not None and mkt_probs:
-            p    = _prob_trio(mkt_probs, hi, vi_a, vi_b)
-            e_od = _est_odds(p, "3連複")
-            if e_od < TORIKAMI_THRESHOLD:
-                continue
-        else:
-            e_od = 999.0
-        sf_all.append((num_a, num_b, e_od))
+    if org != "nar":
+        for _, row in partner_rows.iterrows():
+            vi = vidx(str(row["horse_id"]))
+            if vi is not None:
+                pool.append((str(int(row["horse_number"])), vi))
 
-    sf_all.sort(key=lambda x: -x[2])
-    sf_sel = sf_all[:MAX_SANRENFUKU_TICKETS]
-    sf_est = [e for *_, e in sf_sel]
-    sanrenfuku_combos = (
-        [(a, b) for a, b, _ in sf_sel]
-        if (not sf_est or _synth_odds(sf_est) >= 1.0)
-        else []
-    )
+        sf_all: list[tuple[str, str, float]] = []
+        for (num_a, vi_a), (num_b, vi_b) in _comb(pool, 2):
+            if hi is not None and mkt_probs:
+                p    = _prob_trio(mkt_probs, hi, vi_a, vi_b)
+                e_od = _est_odds(p, "3連複", org=org)
+                if e_od < TORIKAMI_THRESHOLD:
+                    continue
+            else:
+                e_od = 999.0
+            sf_all.append((num_a, num_b, e_od))
 
-    # --- 3連単: ◎1着固定 × 上位5頭 → P(5,2) → Harville降順 最大5点 ---
-    st_all: list[tuple[str, str, float]] = []
-    for (num_2, vi_2), (num_3, vi_3) in _perm(pool, 2):
-        if hi is not None and mkt_probs:
-            p    = _prob_sanrentan(mkt_probs, hi, vi_2, vi_3)
-            e_od = _est_odds(p, "3連単")
-            if e_od < TORIKAMI_THRESHOLD:
-                continue
-        else:
-            e_od = 999.0
-        st_all.append((num_2, num_3, e_od))
+        sf_all.sort(key=lambda x: -x[2])
+        sf_sel = sf_all[:MAX_SANRENFUKU_TICKETS]
+        sf_est = [e for *_, e in sf_sel]
+        sanrenfuku_combos = (
+            [(a, b) for a, b, _ in sf_sel]
+            if (not sf_est or _synth_odds(sf_est) >= 1.0)
+            else []
+        )
 
-    st_all.sort(key=lambda x: -x[2])
-    st_sel = st_all[:MAX_SANRENTAN_TICKETS]
-    st_est = [e for *_, e in st_sel]
-    sanrentan_combos = (
-        [(n2, n3) for n2, n3, _ in st_sel]
-        if (not st_est or _synth_odds(st_est) >= 1.0)
-        else []
-    )
+        st_all: list[tuple[str, str, float]] = []
+        for (num_2, vi_2), (num_3, vi_3) in _perm(pool, 2):
+            if hi is not None and mkt_probs:
+                p    = _prob_sanrentan(mkt_probs, hi, vi_2, vi_3)
+                e_od = _est_odds(p, "3連単", org=org)
+                if e_od < TORIKAMI_THRESHOLD:
+                    continue
+            else:
+                e_od = 999.0
+            st_all.append((num_2, num_3, e_od))
+
+        st_all.sort(key=lambda x: -x[2])
+        st_sel = st_all[:MAX_SANRENTAN_TICKETS]
+        st_est = [e for *_, e in st_sel]
+        sanrentan_combos = (
+            [(n2, n3) for n2, n3, _ in st_sel]
+            if (not st_est or _synth_odds(st_est) >= 1.0)
+            else []
+        )
 
     result["is_buy"]            = True
     result["baren_partners"]    = baren_nums
@@ -703,45 +738,59 @@ def main() -> None:
         action="store_true",
         help="LINE 送信をスキップしてローカルに JSON を出力",
     )
+    parser.add_argument(
+        "--org",
+        choices=["jra", "nar", "auto"],
+        default="auto",
+        help="競馬主催者 (auto=平日NAR/土日JRA, default: auto)",
+    )
     args = parser.parse_args()
     target_date = date.fromisoformat(args.date)
 
+    org = get_org(target_date) if args.org == "auto" else args.org
+
     t0 = time.time()
     logger.info("=" * 60)
-    logger.info(f"daily_batch 開始: {target_date}")
+    logger.info(f"daily_batch 開始: {target_date}  [org={org.upper()}]")
     logger.info("=" * 60)
 
     # ── 1. モデル・履歴読み込み ──────────────────────────────────
     logger.info("[1/5] モデル・FeatureEngineer 読み込み")
-    trainer = ModelTrainer.load(settings.model_path)
+    model_path = settings.nar_model_path if org == "nar" else settings.model_path
+    stats_path  = settings.nar_stats_path  if org == "nar" else settings.stats_path
+
+    # NAR モデルが存在しない場合は JRA モデルで代替（初期運用時）
+    if org == "nar" and not model_path.exists():
+        logger.warning(f"  NAR モデルが見つかりません ({model_path})。JRA モデルで代替します。")
+        model_path = settings.model_path
+        stats_path  = settings.stats_path
+
+    trainer = ModelTrainer.load(model_path)
 
     # ── 2. FeatureEngineer 構築 ──────────────────────────────────
     # feature_stats.pkl（リポジトリに含まれる）から推論用統計を読み込む。
     # GitHub Actions のクリーン環境では data/raw/*.csv が存在しないため
     # FeatureEngineer(history_df) は使用しない。
     logger.info("[2/5] FeatureEngineer 構築（feature_stats.pkl から）")
-    fe = FeatureEngineer.from_stats(settings.stats_path)
+    fe = FeatureEngineer.from_stats(stats_path)
     logger.info("  FeatureEngineer 準備完了")
 
     # ── 3. 当日レーススケジュール取得 ────────────────────────────
     logger.info("[3/5] 当日レーススケジュール取得")
-    scraper = NetkeibaScraper()
+    scraper = NARScraper() if org == "nar" else NetkeibaScraper()
     try:
         schedule = scraper.fetch_race_schedule_by_date(target_date)
     except Exception as e:
         logger.error(f"スケジュール取得失敗: {e}")
         schedule = {}
 
-    # 対象会場のみ絞り込み（settings.target_jyo_codes）
-    # ※ fetch_race_schedule_by_date が venue_name を返すため、
-    #    設定の jyo_code を venue_name に変換して照合する
-    JYO_TO_NAME = {
-        "01": "札幌", "02": "函館", "03": "福島", "04": "新潟",
-        "05": "東京", "06": "中山", "07": "中京", "08": "京都",
-        "09": "阪神", "10": "小倉",
-    }
-    target_venues = {JYO_TO_NAME[c] for c in settings.target_jyo_code_list
-                     if c in JYO_TO_NAME}
+    # 対象会場のみ絞り込み（settings.*_target_jyo_codes）
+    jyo_to_name = scraper.VENUE_CODE_TO_NAME
+    target_code_list = (
+        settings.nar_target_jyo_code_list if org == "nar"
+        else settings.target_jyo_code_list
+    )
+    target_venues = {jyo_to_name[c] for c in target_code_list if c in jyo_to_name}
     schedule = {k: v for k, v in schedule.items() if k in target_venues}
     if not schedule:
         logger.warning(f"  対象会場なし（target_venues={target_venues}）")
@@ -764,7 +813,7 @@ def main() -> None:
                 venue_results[venue].append(None)
                 continue
 
-            result = predict_and_bet(race_info, fe, trainer)
+            result = predict_and_bet(race_info, fe, trainer, org=org)
             venue_results[venue].append(result)
 
             if result and result["is_buy"]:

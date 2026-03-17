@@ -21,9 +21,18 @@ data/raw/
 data/processed/
 data/models/*.pkl
 data/models/*.bin
-# 学習済みモデル・統計はリポジトリに含める
+# 学習済みモデル・統計はリポジトリに含める（JRA + NAR）
 !data/models/lgbm_model.pkl
 !data/models/feature_stats.pkl
+!data/models/nar_lgbm_model.pkl
+!data/models/nar_feature_stats.pkl
+!data/models/feature_importance.json
+!data/models/nar_feature_importance.json
+# 週次収集データもリポジトリに含める（collect_weekly.yml が更新）
+!data/raw/test_results.csv
+!data/raw/test_meta.csv
+!data/raw/nar_results.csv
+!data/raw/nar_meta.csv
 
 # ログ
 logs/
