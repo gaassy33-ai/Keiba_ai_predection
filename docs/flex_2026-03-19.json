@@ -1,0 +1,397 @@
+{
+  "type": "flex",
+  "altText": "03/19 競馬予測 | 園田",
+  "contents": {
+    "type": "carousel",
+    "contents": [
+      {
+        "type": "bubble",
+        "size": "mega",
+        "header": {
+          "type": "box",
+          "layout": "vertical",
+          "backgroundColor": "#4a5e6b",
+          "paddingAll": "16px",
+          "contents": [
+            {
+              "type": "text",
+              "text": "園田",
+              "weight": "bold",
+              "color": "#ffffff",
+              "size": "lg"
+            },
+            {
+              "type": "text",
+              "text": "2026年3月19日（木）",
+              "color": "#ffffff99",
+              "size": "xs",
+              "margin": "xs"
+            }
+          ]
+        },
+        "body": {
+          "type": "box",
+          "layout": "vertical",
+          "spacing": "none",
+          "paddingAll": "0px",
+          "contents": [
+            {
+              "type": "separator"
+            },
+            {
+              "type": "box",
+              "layout": "horizontal",
+              "paddingStart": "14px",
+              "paddingEnd": "14px",
+              "paddingTop": "7px",
+              "paddingBottom": "7px",
+              "contents": [
+                {
+                  "type": "text",
+                  "text": " 1R",
+                  "size": "sm",
+                  "color": "#cccccc",
+                  "flex": 0
+                },
+                {
+                  "type": "text",
+                  "text": "— 見送り",
+                  "size": "sm",
+                  "color": "#cccccc",
+                  "flex": 1,
+                  "margin": "md"
+                }
+              ]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "box",
+              "layout": "horizontal",
+              "paddingStart": "14px",
+              "paddingEnd": "14px",
+              "paddingTop": "7px",
+              "paddingBottom": "7px",
+              "contents": [
+                {
+                  "type": "text",
+                  "text": " 2R",
+                  "size": "sm",
+                  "color": "#cccccc",
+                  "flex": 0
+                },
+                {
+                  "type": "text",
+                  "text": "— 見送り",
+                  "size": "sm",
+                  "color": "#cccccc",
+                  "flex": 1,
+                  "margin": "md"
+                }
+              ]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "box",
+              "layout": "horizontal",
+              "paddingStart": "14px",
+              "paddingEnd": "14px",
+              "paddingTop": "7px",
+              "paddingBottom": "7px",
+              "contents": [
+                {
+                  "type": "text",
+                  "text": " 3R",
+                  "size": "sm",
+                  "color": "#cccccc",
+                  "flex": 0
+                },
+                {
+                  "type": "text",
+                  "text": "— 見送り",
+                  "size": "sm",
+                  "color": "#cccccc",
+                  "flex": 1,
+                  "margin": "md"
+                }
+              ]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "box",
+              "layout": "horizontal",
+              "paddingStart": "14px",
+              "paddingEnd": "14px",
+              "paddingTop": "7px",
+              "paddingBottom": "7px",
+              "contents": [
+                {
+                  "type": "text",
+                  "text": " 4R",
+                  "size": "sm",
+                  "color": "#cccccc",
+                  "flex": 0
+                },
+                {
+                  "type": "text",
+                  "text": "— 見送り",
+                  "size": "sm",
+                  "color": "#cccccc",
+                  "flex": 1,
+                  "margin": "md"
+                }
+              ]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "box",
+              "layout": "horizontal",
+              "paddingStart": "14px",
+              "paddingEnd": "14px",
+              "paddingTop": "7px",
+              "paddingBottom": "7px",
+              "contents": [
+                {
+                  "type": "text",
+                  "text": " 5R",
+                  "size": "sm",
+                  "color": "#cccccc",
+                  "flex": 0
+                },
+                {
+                  "type": "text",
+                  "text": "— 見送り",
+                  "size": "sm",
+                  "color": "#cccccc",
+                  "flex": 1,
+                  "margin": "md"
+                }
+              ]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "box",
+              "layout": "horizontal",
+              "paddingStart": "14px",
+              "paddingEnd": "14px",
+              "paddingTop": "7px",
+              "paddingBottom": "7px",
+              "contents": [
+                {
+                  "type": "text",
+                  "text": " 6R",
+                  "size": "sm",
+                  "color": "#cccccc",
+                  "flex": 0
+                },
+                {
+                  "type": "text",
+                  "text": "— 見送り",
+                  "size": "sm",
+                  "color": "#cccccc",
+                  "flex": 1,
+                  "margin": "md"
+                }
+              ]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "box",
+              "layout": "horizontal",
+              "paddingStart": "14px",
+              "paddingEnd": "14px",
+              "paddingTop": "7px",
+              "paddingBottom": "7px",
+              "contents": [
+                {
+                  "type": "text",
+                  "text": " 7R",
+                  "size": "sm",
+                  "color": "#cccccc",
+                  "flex": 0
+                },
+                {
+                  "type": "text",
+                  "text": "— 見送り",
+                  "size": "sm",
+                  "color": "#cccccc",
+                  "flex": 1,
+                  "margin": "md"
+                }
+              ]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "box",
+              "layout": "horizontal",
+              "paddingStart": "14px",
+              "paddingEnd": "14px",
+              "paddingTop": "7px",
+              "paddingBottom": "7px",
+              "contents": [
+                {
+                  "type": "text",
+                  "text": " 8R",
+                  "size": "sm",
+                  "color": "#cccccc",
+                  "flex": 0
+                },
+                {
+                  "type": "text",
+                  "text": "— 見送り",
+                  "size": "sm",
+                  "color": "#cccccc",
+                  "flex": 1,
+                  "margin": "md"
+                }
+              ]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "box",
+              "layout": "horizontal",
+              "paddingStart": "14px",
+              "paddingEnd": "14px",
+              "paddingTop": "7px",
+              "paddingBottom": "7px",
+              "contents": [
+                {
+                  "type": "text",
+                  "text": " 9R",
+                  "size": "sm",
+                  "color": "#cccccc",
+                  "flex": 0
+                },
+                {
+                  "type": "text",
+                  "text": "— 見送り",
+                  "size": "sm",
+                  "color": "#cccccc",
+                  "flex": 1,
+                  "margin": "md"
+                }
+              ]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "box",
+              "layout": "horizontal",
+              "paddingStart": "14px",
+              "paddingEnd": "14px",
+              "paddingTop": "7px",
+              "paddingBottom": "7px",
+              "contents": [
+                {
+                  "type": "text",
+                  "text": "10R",
+                  "size": "sm",
+                  "color": "#cccccc",
+                  "flex": 0
+                },
+                {
+                  "type": "text",
+                  "text": "— 見送り",
+                  "size": "sm",
+                  "color": "#cccccc",
+                  "flex": 1,
+                  "margin": "md"
+                }
+              ]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "box",
+              "layout": "horizontal",
+              "paddingStart": "14px",
+              "paddingEnd": "14px",
+              "paddingTop": "7px",
+              "paddingBottom": "7px",
+              "contents": [
+                {
+                  "type": "text",
+                  "text": "11R",
+                  "size": "sm",
+                  "color": "#cccccc",
+                  "flex": 0
+                },
+                {
+                  "type": "text",
+                  "text": "— 見送り",
+                  "size": "sm",
+                  "color": "#cccccc",
+                  "flex": 1,
+                  "margin": "md"
+                }
+              ]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "box",
+              "layout": "horizontal",
+              "paddingStart": "14px",
+              "paddingEnd": "14px",
+              "paddingTop": "7px",
+              "paddingBottom": "7px",
+              "contents": [
+                {
+                  "type": "text",
+                  "text": "12R",
+                  "size": "sm",
+                  "color": "#cccccc",
+                  "flex": 0
+                },
+                {
+                  "type": "text",
+                  "text": "— 見送り",
+                  "size": "sm",
+                  "color": "#cccccc",
+                  "flex": 1,
+                  "margin": "md"
+                }
+              ]
+            },
+            {
+              "type": "separator"
+            }
+          ]
+        },
+        "footer": {
+          "type": "box",
+          "layout": "vertical",
+          "backgroundColor": "#f5f5f5",
+          "paddingAll": "10px",
+          "contents": [
+            {
+              "type": "text",
+              "text": "参加 0R / 0R中",
+              "size": "xs",
+              "color": "#888888",
+              "align": "center"
+            }
+          ]
+        }
+      }
+    ]
+  }
+}
