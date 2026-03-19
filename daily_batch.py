@@ -313,7 +313,9 @@ def predict_and_bet(
         logger.warning(f"特徴量生成失敗 {race_info.race_id}: {e}")
         return None
 
-    X = feat_df[FeatureEngineer.FEATURE_COLUMNS].fillna(0)
+    X = (feat_df[FeatureEngineer.FEATURE_COLUMNS]
+         .apply(pd.to_numeric, errors="coerce")
+         .fillna(0))
     win_probs = trainer.model.predict(X)
     if trainer.place_model is not None:
         place_probs = trainer.place_model.predict(X)
@@ -775,11 +777,21 @@ def main() -> None:
     trainer = ModelTrainer.load(model_path)
 
     # ── 2. FeatureEngineer 構築 ──────────────────────────────────
-    # feature_stats.pkl（リポジトリに含まれる）から推論用統計を読み込む。
-    # GitHub Actions のクリーン環境では data/raw/*.csv が存在しないため
-    # FeatureEngineer(history_df) は使用しない。
     logger.info("[2/5] FeatureEngineer 構築（feature_stats.pkl から）")
     fe = FeatureEngineer.from_stats(stats_path)
+
+    # NAR: 直近成績 CSV が存在すれば history に読み込み recent_avg_pos を有効化。
+    # NAR モデルでは recent_avg_pos が最重要特徴量（gain 30.6%）のため必須。
+    # nar_results.csv はリポジトリに含まれ、collect_weekly.yml が週次更新する。
+    if org == "nar":
+        nar_hist_path = ROOT / "data" / "raw" / "nar_results.csv"
+        if nar_hist_path.exists():
+            nar_hist = pd.read_csv(nar_hist_path, dtype=str)
+            fe.history = fe._preprocess_history(nar_hist)
+            logger.info(f"  NAR 直近成績ロード: {len(nar_hist):,} rows → recent_avg_pos 有効")
+        else:
+            logger.warning("  nar_results.csv が見つかりません。recent_avg_pos = NaN になります。")
+
     logger.info("  FeatureEngineer 準備完了")
 
     # ── 3. 当日レーススケジュール取得 ────────────────────────────
