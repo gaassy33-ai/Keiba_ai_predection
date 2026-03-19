@@ -93,6 +93,40 @@ class NetkeibaScraper(BaseScraper):
             self._driver.quit()
             self._driver = None
 
+    def _login_if_needed(self) -> None:
+        """
+        Selenium ドライバーで netkeiba にログインする（credentials設定時のみ、1セッション1回）。
+        account.netkeiba.com → nar.netkeiba.com のドメイン間でクッキーが共有される。
+        """
+        if not settings.netkeiba_email or not settings.netkeiba_password:
+            return
+        if getattr(self, "_is_logged_in", False):
+            return
+
+        driver = self._get_driver()
+        logger.info("netkeiba ログイン試行中...")
+        login_url = "https://account.netkeiba.com/?pid=login"
+        try:
+            driver.get(login_url)
+        except Exception as e:
+            logger.warning(f"ログインページ取得失敗: {e}")
+            return
+
+        try:
+            WebDriverWait(driver, 15).until(
+                EC.presence_of_element_located((By.ID, "login_id"))
+            )
+            driver.find_element(By.ID, "login_id").clear()
+            driver.find_element(By.ID, "login_id").send_keys(settings.netkeiba_email)
+            driver.find_element(By.ID, "pswd").clear()
+            driver.find_element(By.ID, "pswd").send_keys(settings.netkeiba_password)
+            driver.find_element(By.CSS_SELECTOR, "input[type='submit'], button[type='submit']").click()
+            time.sleep(3)
+            self._is_logged_in = True
+            logger.info(f"netkeiba ログイン完了 (遷移先: {driver.current_url})")
+        except Exception as e:
+            logger.warning(f"netkeiba ログイン失敗: {e}")
+
     # ------------------------------------------------------------------
     # 過去レース成績（race_id 単位）
     # ------------------------------------------------------------------

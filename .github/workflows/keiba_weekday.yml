@@ -138,10 +138,11 @@ jobs:
           git diff --cached --quiet || git commit -m "chore: 地方競馬 朝バッチ 予想ページ更新 [skip ci]"
           git push || true
 
-      - name: Upload logs on failure
-        if: failure()
+      - name: Upload logs (always)
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: nar-morning-logs-${{ github.run_id }}
           path: logs/
           retention-days: 7
+          if-no-files-found: ignore

@@ -213,8 +213,137 @@ class NARScraper(NetkeibaScraper):
     def fetch_today_entries(self, race_id: str) -> RaceInfo:
         """
         当日出走表と馬場・天候をSeleniumで取得する（NAR版）。
-        JRA版と同一ロジックだが RACE_URL が NAR 用になっているため
-        URL 解決は自動的に正しくなる。
+
+        JRA版との相違点:
+        - ログインが必要な場合は _login_if_needed() でログインしてからアクセス
+        - CSS クラス名が異なる場合のフォールバック: /horse/ リンクを起点にパース
+        - 0頭時はページソースを logs/ に保存してデバッグを容易にする
         """
-        # NARのURLも同じパターン: nar.netkeiba.com/race/shutuba.html?race_id=...
-        return super().fetch_today_entries(race_id)
+        import re as _re
+        from pathlib import Path as _Path
+
+        # --- ① netkeiba ログイン（要ログインページ対策）---
+        self._login_if_needed()
+
+        # --- ② 親クラスの標準パース（table.Shutuba_Table / tr.HorseList）---
+        race_info = super().fetch_today_entries(race_id)
+
+        if race_info.entries:
+            return race_info
+
+        # --- ③ 標準パース失敗: フォールバック（/horse/ リンク起点）---
+        logger.warning(
+            f"  [NAR] {race_id}: 標準パース 0頭 → フォールバックパース試行"
+        )
+        driver = self._get_driver()
+        from bs4 import BeautifulSoup as _BS
+        soup = _BS(driver.page_source, "lxml")
+
+        # ページ上のすべての /horse/ リンクを収集
+        horse_links = [
+            a for a in soup.select("a[href]")
+            if _re.search(r"/horse/\d+", a.get("href", ""))
+        ]
+        logger.info(f"  [NAR] フォールバック: /horse/ リンク {len(horse_links)} 件")
+
+        entries = []
+        seen_horse_ids: set[str] = set()
+
+        for horse_link in horse_links:
+            m = _re.search(r"/horse/(\d+)", horse_link.get("href", ""))
+            if not m:
+                continue
+            horse_id = m.group(1)
+            if horse_id in seen_horse_ids:
+                continue
+            seen_horse_ids.add(horse_id)
+
+            # 親 <tr> を探す
+            tr = horse_link.find_parent("tr")
+            if tr is None:
+                continue
+
+            tds = tr.select("td")
+            all_links = tr.select("a[href]")
+
+            jockey_link = tr.select_one("td.Jockey a") or next(
+                (a for a in all_links if _re.search(r"/jockey/", a.get("href", ""))), None
+            )
+            trainer_link = tr.select_one("td.Trainer a") or next(
+                (a for a in all_links if _re.search(r"/trainer/", a.get("href", ""))), None
+            )
+
+            def _xid(link, pat):
+                if not link:
+                    return ""
+                mm = _re.search(pat, link.get("href", ""))
+                return mm.group(1) if mm else ""
+
+            waku_td  = tr.select_one("td.Waku")
+            umaban_td = tr.select_one("td.Umaban")
+            barei_td = tr.select_one("td.Barei")
+            futan_td = tr.select_one("td.Futan")
+
+            # 枠番: Waku td → tds[0]
+            waku_src = waku_td or (tds[0] if tds else None)
+            frame_text = _re.sub(r"\D", "", waku_src.get_text(strip=True)) if waku_src else ""
+            frame_num = int(frame_text) if frame_text.isdigit() else 0
+
+            # 馬番: Umaban td → tds[1]
+            umaban_src = umaban_td or (tds[1] if len(tds) > 1 else None)
+            horse_text = _re.sub(r"\D", "", umaban_src.get_text(strip=True)) if umaban_src else ""
+            horse_num = int(horse_text) if horse_text.isdigit() else 0
+
+            barei_text = barei_td.get_text(strip=True) if barei_td else ""
+
+            jockey_id  = _xid(jockey_link,  r"/jockey/(?:result/recent/)?(\d+)")
+            trainer_id = _xid(trainer_link, r"/trainer/(?:result/recent/)?(\d+)")
+
+            from src.scraper.base_scraper import HorseRecord as _HR
+            entries.append(_HR(
+                horse_id=horse_id,
+                horse_name=horse_link.get_text(strip=True),
+                frame_number=frame_num,
+                horse_number=horse_num,
+                sex=barei_text[0] if barei_text else "",
+                age=int(barei_text[1:] or 0) if len(barei_text) > 1 else 0,
+                weight_carried=float(futan_td.get_text(strip=True) or 0) if futan_td else 0.0,
+                jockey_id=jockey_id,
+                jockey_name=jockey_link.get_text(strip=True) if jockey_link else "",
+                trainer_id=trainer_id,
+                trainer_name=trainer_link.get_text(strip=True) if trainer_link else "",
+            ))
+
+        logger.info(
+            f"  [NAR] フォールバック結果: {len(entries)} 頭: "
+            f"{[e.horse_name for e in entries[:5]]}"
+        )
+
+        if entries:
+            # フォールバック成功: race_name / course_type 等は親から引き継ぎ
+            from src.scraper.base_scraper import RaceInfo as _RI
+            return _RI(
+                race_id=race_info.race_id,
+                race_name=race_info.race_name,
+                course_type=race_info.course_type,
+                distance=race_info.distance,
+                direction=race_info.direction,
+                ground_condition=race_info.ground_condition,
+                weather=race_info.weather,
+                start_datetime=race_info.start_datetime,
+                entries=entries,
+            )
+
+        # --- ④ 完全失敗: ページソースを保存（デバッグ用）---
+        debug_dir = _Path("logs")
+        debug_dir.mkdir(exist_ok=True)
+        debug_path = debug_dir / f"nar_shutuba_debug_{race_id}.html"
+        with open(debug_path, "w", encoding="utf-8") as f:
+            f.write(f"<!-- URL: {driver.current_url} -->\n")
+            f.write(driver.page_source)
+        logger.warning(
+            f"  [NAR] {race_id}: 0頭 (フォールバックも失敗). "
+            f"ページソース保存: {debug_path} | 現在URL: {driver.current_url}"
+        )
+
+        return race_info
