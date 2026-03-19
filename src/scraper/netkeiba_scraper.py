@@ -95,13 +95,15 @@ class NetkeibaScraper(BaseScraper):
 
     def _login_if_needed(self) -> None:
         """
-        Selenium ドライバーで netkeiba にログインする（credentials設定時のみ、1セッション1回）。
+        Selenium ドライバーで netkeiba にログインする（credentials設定時のみ、1セッション1回のみ試行）。
         account.netkeiba.com → nar.netkeiba.com のドメイン間でクッキーが共有される。
         """
         if not settings.netkeiba_email or not settings.netkeiba_password:
             return
-        if getattr(self, "_is_logged_in", False):
+        # 成否にかかわらず1回のみ試行（毎レース再試行しない）
+        if getattr(self, "_login_attempted", False):
             return
+        self._login_attempted = True
 
         driver = self._get_driver()
         logger.info("netkeiba ログイン試行中...")
@@ -125,7 +127,7 @@ class NetkeibaScraper(BaseScraper):
             self._is_logged_in = True
             logger.info(f"netkeiba ログイン完了 (遷移先: {driver.current_url})")
         except Exception as e:
-            logger.warning(f"netkeiba ログイン失敗: {e}")
+            logger.warning(f"netkeiba ログイン失敗（以降ログインなしで続行）: {e}")
 
     # ------------------------------------------------------------------
     # 過去レース成績（race_id 単位）

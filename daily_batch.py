@@ -336,6 +336,11 @@ def predict_and_bet(
         honmei_prob < prob_threshold
         or (honmei_prob - taikou_prob) < MIN_CONFIDENCE_GAP
     )
+    logger.info(
+        f"  probs: ◎{pred_df.iloc[0]['horse_name']}={honmei_prob:.4f}"
+        f"  対抗={taikou_prob:.4f}  threshold={prob_threshold:.2f}"
+        f"  {'→ケン' if is_skip else '→◎'}"
+    )
 
     honmei_row = pred_df.iloc[0]
     honmei_num  = str(int(honmei_row["horse_number"]))

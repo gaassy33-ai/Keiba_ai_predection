@@ -318,6 +318,15 @@ class NARScraper(NetkeibaScraper):
             f"  [NAR] フォールバック結果: {len(entries)} 頭: "
             f"{[e.horse_name for e in entries[:5]]}"
         )
+        logger.info(
+            f"  [NAR] horse_ids(sample): {[e.horse_id for e in entries[:5]]}"
+        )
+        logger.info(
+            f"  [NAR] jockey_ids(sample): {[e.jockey_id for e in entries[:5]]}"
+        )
+        logger.info(
+            f"  [NAR] horse_numbers(sample): {[e.horse_number for e in entries[:5]]}"
+        )
 
         if entries:
             # フォールバック成功: race_name / course_type 等は親から引き継ぎ
