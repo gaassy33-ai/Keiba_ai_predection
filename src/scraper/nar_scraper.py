@@ -296,7 +296,10 @@ class NARScraper(NetkeibaScraper):
 
             barei_text = barei_td.get_text(strip=True) if barei_td else ""
 
-            jockey_id  = _xid(jockey_link,  r"/jockey/(?:result/recent/)?(\d+)")
+            # NAR ジョッキー URL は /jockey/05683/ だけでなく
+            # /jockey/nar05683/ や /jockey/result/05683/ など多様なため
+            # URL内の4〜6桁数字を広くキャプチャする
+            jockey_id  = _xid(jockey_link,  r"/jockey/[^?#]*?(\d{4,6})(?:[^0-9]|$)")
             trainer_id = _xid(trainer_link, r"/trainer/(?:result/recent/)?(\d+)")
 
             from src.scraper.base_scraper import HorseRecord as _HR

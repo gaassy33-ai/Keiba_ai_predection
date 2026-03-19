@@ -65,7 +65,11 @@ JRA_TAKE = {"馬連": 0.225, "馬単": 0.25, "3連複": 0.225, "3連単": 0.275}
 #   prob≥0.35: ROI 181.9%（0.25-0.35帯は赤字）
 #   馬単 ROI 157.3% > 馬連 144.9% > 複勝 118.8% > 単勝 100.1%
 #   3連複/3連単は未検証のため除外
-NAR_MIN_HONMEI_PROB  = 0.35   # JRA=0.25 より高い閾値
+#
+# ※ 推論時は jockey_id が部分的に欠損するため確率が圧縮される。
+#   バックテスト（完全特徴量）の 0.35 相当 → 推論では 0.25 前後に対応。
+#   信頼度差 ≥ 0.05 の二次フィルターで精度を担保する。
+NAR_MIN_HONMEI_PROB  = 0.25   # 推論時の特徴量欠損を考慮して調整
 NAR_WIN_BLEND        = 0.85   # win_model の重み（JRA=0.70）馬単重視のため勝ちモデルを優先
 NAR_TAKE = {"馬連": 0.25, "馬単": 0.25}  # NAR 控除率（JRA より高め）
 
@@ -779,7 +783,7 @@ def main() -> None:
         model_path = settings.model_path
         stats_path  = settings.stats_path
 
-    trainer = ModelTrainer.load(model_path)
+    trainer = ModelTrainer.load(model_path, org=org)
 
     # ── 2. FeatureEngineer 構築 ──────────────────────────────────
     logger.info("[2/5] FeatureEngineer 構築（feature_stats.pkl から）")
