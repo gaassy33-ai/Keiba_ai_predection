@@ -127,23 +127,48 @@
               "layout": "horizontal",
               "paddingStart": "14px",
               "paddingEnd": "14px",
-              "paddingTop": "7px",
-              "paddingBottom": "7px",
+              "paddingTop": "9px",
+              "paddingBottom": "9px",
               "contents": [
                 {
                   "type": "text",
                   "text": " 4R",
                   "size": "sm",
-                  "color": "#cccccc",
+                  "weight": "bold",
+                  "color": "#1a5533",
                   "flex": 0
                 },
                 {
-                  "type": "text",
-                  "text": "— 見送り",
-                  "size": "sm",
-                  "color": "#cccccc",
+                  "type": "box",
+                  "layout": "vertical",
                   "flex": 1,
-                  "margin": "md"
+                  "margin": "md",
+                  "contents": [
+                    {
+                      "type": "text",
+                      "text": "◎6 ジーティーアムール（単・複）",
+                      "size": "sm",
+                      "weight": "bold",
+                      "color": "#1a5533",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "馬連: 6-7 / 8 / 4",
+                      "size": "xs",
+                      "color": "#555555",
+                      "margin": "xs",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "馬単: 6→7 / 6→8 / 6→4",
+                      "size": "xs",
+                      "color": "#7a5500",
+                      "margin": "xs",
+                      "wrap": true
+                    }
+                  ]
                 }
               ]
             },
@@ -155,23 +180,48 @@
               "layout": "horizontal",
               "paddingStart": "14px",
               "paddingEnd": "14px",
-              "paddingTop": "7px",
-              "paddingBottom": "7px",
+              "paddingTop": "9px",
+              "paddingBottom": "9px",
               "contents": [
                 {
                   "type": "text",
                   "text": " 5R",
                   "size": "sm",
-                  "color": "#cccccc",
+                  "weight": "bold",
+                  "color": "#1a5533",
                   "flex": 0
                 },
                 {
-                  "type": "text",
-                  "text": "— 見送り",
-                  "size": "sm",
-                  "color": "#cccccc",
+                  "type": "box",
+                  "layout": "vertical",
                   "flex": 1,
-                  "margin": "md"
+                  "margin": "md",
+                  "contents": [
+                    {
+                      "type": "text",
+                      "text": "◎5 ジーティースワット（単・複）",
+                      "size": "sm",
+                      "weight": "bold",
+                      "color": "#1a5533",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "馬連: 5-9 / 3 / 7",
+                      "size": "xs",
+                      "color": "#555555",
+                      "margin": "xs",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "馬単: 5→9 / 5→3 / 5→7",
+                      "size": "xs",
+                      "color": "#7a5500",
+                      "margin": "xs",
+                      "wrap": true
+                    }
+                  ]
                 }
               ]
             },
@@ -384,7 +434,7 @@
           "contents": [
             {
               "type": "text",
-              "text": "参加 0R / 12R中",
+              "text": "参加 2R / 12R中",
               "size": "xs",
               "color": "#888888",
               "align": "center"
