@@ -454,52 +454,54 @@ def predict_and_bet(
             for i, (num, _vi) in enumerate(pool)
         }
 
-        sf_all: list[tuple[str, str, float]] = []
+        # 3連複: EV = モデル確率(trio) × 推定市場配当  ← 馬連と同じモデルEVアプローチ
+        # (num_a, num_b, ev_score, e_od)
+        sf_all: list[tuple[str, str, float, float]] = []
         for (num_a, vi_a), (num_b, vi_b) in _comb(pool, 2):
-            if hi is not None and vi_a is not None and vi_b is not None and mkt_probs:
-                # オッズあり: 市場確率でHarville+トリガミ判定
-                p    = _prob_trio(mkt_probs, hi, vi_a, vi_b)
-                e_od = _est_odds(p, "3連複", org=org)
-                if e_od < TORIKAMI_THRESHOLD:
-                    continue
-            else:
-                # オッズなし: モデル確率でHarvilleを推定（トリガミ判定は省略）
-                pa = _partner_pred_idxs.get(num_a, 1)
-                pb = _partner_pred_idxs.get(num_b, 2)
-                p    = _prob_trio(_model_probs, 0, pa, pb)
-                e_od = _est_odds(p, "3連複", org=org)
-            sf_all.append((num_a, num_b, e_od))
+            pa      = _partner_pred_idxs.get(num_a, 1)
+            pb      = _partner_pred_idxs.get(num_b, 2)
+            model_p = _prob_trio(_model_probs, 0, pa, pb)
 
-        sf_all.sort(key=lambda x: -x[2])
+            if hi is not None and vi_a is not None and vi_b is not None and mkt_probs:
+                mkt_p = _prob_trio(mkt_probs, hi, vi_a, vi_b)
+                e_od  = _est_odds(mkt_p, "3連複", org=org)
+            else:
+                e_od = _est_odds(model_p, "3連複", org=org)
+
+            ev = model_p * e_od   # EV: モデル期待確率 × 推定配当
+            sf_all.append((num_a, num_b, ev, e_od))
+
+        sf_all.sort(key=lambda x: -x[2])   # EV降順
         sf_sel = sf_all[:MAX_SANRENFUKU_TICKETS]
-        sf_est = [e for *_, e in sf_sel]
+        sf_est = [od for _, _, _, od in sf_sel]
         sanrenfuku_combos = (
-            [(a, b) for a, b, _ in sf_sel]
+            [(a, b) for a, b, _, _ in sf_sel]
             if (not sf_est or _synth_odds(sf_est) >= 1.0)
             else []
         )
 
-        st_all: list[tuple[str, str, float]] = []
+        # 3連単: EV = モデル確率(◎→A→B) × 推定市場配当
+        # (num_2, num_3, ev_score, e_od)
+        st_all: list[tuple[str, str, float, float]] = []
         for (num_2, vi_2), (num_3, vi_3) in _perm(pool, 2):
-            if hi is not None and vi_2 is not None and vi_3 is not None and mkt_probs:
-                # オッズあり: 市場確率でHarville+トリガミ判定
-                p    = _prob_sanrentan(mkt_probs, hi, vi_2, vi_3)
-                e_od = _est_odds(p, "3連単", org=org)
-                if e_od < TORIKAMI_THRESHOLD:
-                    continue
-            else:
-                # オッズなし: モデル確率でHarvilleを推定
-                p2 = _partner_pred_idxs.get(num_2, 1)
-                p3 = _partner_pred_idxs.get(num_3, 2)
-                p    = _prob_sanrentan(_model_probs, 0, p2, p3)
-                e_od = _est_odds(p, "3連単", org=org)
-            st_all.append((num_2, num_3, e_od))
+            p2      = _partner_pred_idxs.get(num_2, 1)
+            p3      = _partner_pred_idxs.get(num_3, 2)
+            model_p = _prob_sanrentan(_model_probs, 0, p2, p3)
 
-        st_all.sort(key=lambda x: -x[2])
+            if hi is not None and vi_2 is not None and vi_3 is not None and mkt_probs:
+                mkt_p = _prob_sanrentan(mkt_probs, hi, vi_2, vi_3)
+                e_od  = _est_odds(mkt_p, "3連単", org=org)
+            else:
+                e_od = _est_odds(model_p, "3連単", org=org)
+
+            ev = model_p * e_od
+            st_all.append((num_2, num_3, ev, e_od))
+
+        st_all.sort(key=lambda x: -x[2])   # EV降順
         st_sel = st_all[:MAX_SANRENTAN_TICKETS]
-        st_est = [e for *_, e in st_sel]
+        st_est = [od for _, _, _, od in st_sel]
         sanrentan_combos = (
-            [(n2, n3) for n2, n3, _ in st_sel]
+            [(n2, n3) for n2, n3, _, _ in st_sel]
             if (not st_est or _synth_odds(st_est) >= 1.0)
             else []
         )
