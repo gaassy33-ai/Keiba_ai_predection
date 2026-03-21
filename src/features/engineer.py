@@ -45,6 +45,7 @@ class FeatureEngineer:
         self._sire_win_rate: pd.Series | None = None
         self._bms_win_rate: pd.Series | None = None
         self._jockey_course_stats: pd.DataFrame | None = None
+        self._trainer_stats: pd.DataFrame | None = None
 
     # ------------------------------------------------------------------
     # 前処理
@@ -151,6 +152,19 @@ class FeatureEngineer:
             )
             .reset_index()
         )
+
+        # 調教師別勝率・連対率（trainer_name 列があれば集計）
+        if "trainer_name" in h.columns and h["trainer_name"].replace("", pd.NA).notna().any():
+            self._trainer_stats = (
+                h[h["trainer_name"].replace("", pd.NA).notna()]
+                .groupby("trainer_name")
+                .agg(
+                    trainer_win_rate=("is_win", "mean"),
+                    trainer_place_rate=("is_placed", "mean"),
+                )
+                .reset_index()
+            )
+
         logger.info("Aggregation precomputation done.")
 
     # ------------------------------------------------------------------
@@ -192,29 +206,15 @@ class FeatureEngineer:
         # レース環境特徴量（全馬共通）
         df["course_type_code"] = 0 if course_type == "芝" else 1
         df["distance"] = distance
-        df["distance_bin_code"] = pd.cut(
-            [distance], bins=[0, 1400, 1800, 2200, 9999],
-            labels=[0, 1, 2, 3]
-        )[0]
         df["ground_condition_code"] = ground_condition_code
         df["weather_code"] = weather_code
 
-        # 産駒勝率
-        if self._sire_win_rate is not None:
-            df = df.merge(
-                self._sire_win_rate.reset_index(),
-                left_on="father", right_on="father", how="left"
-            )
+        # 調教師勝率・連対率
+        if self._trainer_stats is not None and "trainer_name" in df.columns:
+            df = df.merge(self._trainer_stats, on="trainer_name", how="left")
         else:
-            df["sire_win_rate"] = np.nan
-
-        if self._bms_win_rate is not None:
-            df = df.merge(
-                self._bms_win_rate.reset_index(),
-                left_on="mother_father", right_on="mother_father", how="left"
-            )
-        else:
-            df["bms_win_rate"] = np.nan
+            df["trainer_win_rate"] = np.nan
+            df["trainer_place_rate"] = np.nan
 
         # ジョッキー適性
         if self._jockey_course_stats is not None:
@@ -254,6 +254,22 @@ class FeatureEngineer:
         """
         # 推論時: スクレイプで事前計算済みの値がある場合はそのまま返す
         if "recent_avg_pos" in df.columns and "recent_avg_last3f" in df.columns:
+            if "recent_top3_rate" not in df.columns:
+                # recent_top3_rate だけ追加
+                h = self.history
+                if not h.empty:
+                    t3 = (
+                        h.sort_values("race_id", ascending=False)
+                        .groupby("horse_id")
+                        .head(self.RECENT_N)
+                        .groupby("horse_id")["is_placed"]
+                        .mean()
+                        .reset_index()
+                        .rename(columns={"is_placed": "recent_top3_rate"})
+                    )
+                    df = df.merge(t3, on="horse_id", how="left")
+                else:
+                    df["recent_top3_rate"] = np.nan
             return df
 
         h = self.history
@@ -270,6 +286,7 @@ class FeatureEngineer:
             .agg(
                 recent_avg_pos=("finish_pos_num", "mean"),
                 recent_avg_last3f=("last_3f_num", "mean"),
+                recent_top3_rate=("is_placed", "mean"),
             )
             .reset_index()
         )
@@ -368,7 +385,7 @@ class FeatureEngineer:
             # entry_df として整形（weight_carried_num がない場合は weight_carried を使う）
             wt_col = "weight_carried_num" if "weight_carried_num" in race_entries.columns else "weight_carried"
             base_cols = ["horse_id", "horse_name", "horse_number", "frame_number", "jockey_id"]
-            for c in ("sex", "age", wt_col):
+            for c in ("sex", "age", wt_col, "trainer_name"):
                 if c in race_entries.columns:
                     base_cols.append(c)
             entry_df = race_entries[base_cols].copy()
@@ -380,6 +397,8 @@ class FeatureEngineer:
                 entry_df["age"] = np.nan
             if "weight_carried" not in entry_df.columns:
                 entry_df["weight_carried"] = np.nan
+            if "trainer_name" not in entry_df.columns:
+                entry_df["trainer_name"] = ""
 
             # 血統情報の付加（history に father / mother_father カラムがある場合）
             for col in ("father", "mother_father"):
@@ -505,6 +524,7 @@ class FeatureEngineer:
             "sire_win_rate": self._sire_win_rate,
             "bms_win_rate": self._bms_win_rate,
             "jockey_course_stats": self._jockey_course_stats,
+            "trainer_stats": self._trainer_stats,
         }
         with open(path, "wb") as f:
             pickle.dump(stats, f)
@@ -526,6 +546,7 @@ class FeatureEngineer:
         instance._sire_win_rate = stats.get("sire_win_rate")
         instance._bms_win_rate = stats.get("bms_win_rate")
         instance._jockey_course_stats = stats.get("jockey_course_stats")
+        instance._trainer_stats = stats.get("trainer_stats")
         logger.info(f"Feature stats loaded from {path}")
         return instance
 
@@ -612,14 +633,16 @@ class FeatureEngineer:
         "weight_carried",
         "course_type_code",
         "distance",
-        "distance_bin_code",
         "ground_condition_code",
         "weather_code",
-        "sire_win_rate",
-        "bms_win_rate",
+        "trainer_win_rate",       # 調教師勝率（新追加）
+        "trainer_place_rate",     # 調教師連対率（新追加）
         "jockey_win_rate",
         "jockey_place_rate",
         "jockey_runs",
         "recent_avg_pos",
         "recent_avg_last3f",
+        "recent_top3_rate",       # 直近N走での3着以内率（新追加）
+        # 削除: sire_win_rate, bms_win_rate (father/mother_fatherが生データに存在しないため常にNaN)
+        # 削除: distance_bin_code (distanceと冗長、重要度ほぼ0)
     ]

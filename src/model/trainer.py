@@ -86,7 +86,7 @@ class ModelTrainer:
         group_col : str
             グループ分けに使うカラム名（data leakage 防止）
         """
-        X = df[self.feature_columns].copy()
+        X = df[self.feature_columns].apply(pd.to_numeric, errors="coerce").fillna(0)
         y = df[label_col].values
         groups = df[group_col].values
 

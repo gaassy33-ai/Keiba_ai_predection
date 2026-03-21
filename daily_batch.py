@@ -296,6 +296,7 @@ def predict_and_bet(
         "age":            e.age,
         "weight_carried": e.weight_carried,
         "jockey_id":      e.jockey_id,
+        "trainer_name":   e.trainer_name,
         "father":         e.father_name,
         "mother_father":  e.mother_father_name,
     } for e in entries])
