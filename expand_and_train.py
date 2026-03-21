@@ -2,8 +2,8 @@
 利用可能な全データを結合してJRAモデルを再学習するスクリプト。
 
 処理内容:
-1. train_results.csv (2024) + test_results.csv の早期データ (2025-03-15 まで) を結合
-2. 結合データから特徴量を生成
+1. train_results.csv (2022+2023+2024) + test_results.csv の早期データ (2025末まで) を結合
+2. 結合データから特徴量を生成（キャッシュ利用で高速化）
 3. LightGBM モデルを学習・保存
 
 実行例:
@@ -44,7 +44,7 @@ def main() -> None:
     t0 = time.time()
     logger.info("=" * 60)
     logger.info("JRA モデル拡張再学習")
-    logger.info(f"  学習期間: 2024年〜2025年末 (バックテスト: 2026年〜)")
+    logger.info(f"  学習期間: ~2025年末 (バックテスト: 2026年〜)")
     logger.info("=" * 60)
 
     # ── 既存訓練データ読み込み ────────────────────────────────────
@@ -87,9 +87,16 @@ def main() -> None:
     logger.info(f"  対象会場: {venues}")
 
     # ── 特徴量生成 ─────────────────────────────────────────────────
-    TRAINING_CACHE = ROOT / "data/processed/train_2024_2025.csv"
+    TRAINING_CACHE = ROOT / "data/processed/train_all.csv"
 
-    if TRAINING_CACHE.exists():
+    # キャッシュがtrain_results.csvより古い場合は再生成
+    cache_valid = (
+        TRAINING_CACHE.exists()
+        and TRAINING_CACHE.stat().st_mtime
+            >= (ROOT / "data/raw/train_results.csv").stat().st_mtime
+    )
+
+    if cache_valid:
         logger.info(f"[STEP 1] キャッシュから特徴量を読み込み: {TRAINING_CACHE}")
         training_df = pd.read_csv(TRAINING_CACHE)
         # fe は統計計算のために引き続き必要
@@ -97,6 +104,8 @@ def main() -> None:
         fe.precompute_aggregations()
         logger.info(f"  読み込み完了: {len(training_df):,} 行")
     else:
+        if TRAINING_CACHE.exists():
+            logger.info("  キャッシュが古いため再生成します")
         logger.info("[STEP 1] 特徴量生成（per-race ルックバック方式）")
         logger.info(f"  対象レース数: {combined_meta['race_id'].nunique():,}")
 
