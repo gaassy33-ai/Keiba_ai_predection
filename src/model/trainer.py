@@ -143,7 +143,7 @@ class ModelTrainer:
 
     def _fit_place_model(self, df: pd.DataFrame, group_col: str = "race_id") -> None:
         """is_placed（3着以内）を目的変数としたモデルを学習する。"""
-        X = df[self.feature_columns].copy()
+        X = df[self.feature_columns].apply(pd.to_numeric, errors="coerce").fillna(0)
         y = df["is_placed"].values
         groups = df[group_col].values
 

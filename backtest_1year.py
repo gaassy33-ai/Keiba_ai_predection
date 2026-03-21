@@ -1,11 +1,12 @@
 """
-過去1年バックテスト (2025-03-16 〜 2026-03-01)
+バックテスト (2026-01-04 〜 2026-03-15)
+- 学習データ: 2024年 + 2025年 → lgbm_model.pkl
 - lgbm_model.pkl の blended model (0.7*win + 0.3*place) で予測
 - 買い条件: honmei_prob >= 0.15 かつ 信頼度差 >= 0.05
 - 馬券: 単勝・複勝・馬連・3連複・3連単 (Harville推定オッズ)
 - 馬連/3連複/3連単 の払戻は実際オッズを Harville 式で推定
 
-実行: conda run -n lgb311 python3 backtest_1year.py
+実行: python3 backtest_1year.py
 """
 import sys
 import json
@@ -24,7 +25,7 @@ sys.path.insert(0, str(ROOT))
 from src.features.engineer import FeatureEngineer
 
 # ── 設定 ──────────────────────────────────────────────────────
-DATE_FROM        = "2025-03-16"
+DATE_FROM        = "2026-01-01"   # 2024+2025学習後、2026年でバックテスト
 MIN_HONMEI_PROB  = 0.15
 MIN_GAP          = 0.05
 EV_POOL          = 5
@@ -34,7 +35,7 @@ MAX_SF           = 5
 MAX_ST           = 5
 TORIKAMI_THR     = 1.05      # 合成オッズがこれ未満はケン
 JRA_TAKE         = {"馬連": 0.225, "馬単": 0.25, "3連複": 0.225, "3連単": 0.275}
-OUT_CSV          = ROOT / "data/processed/backtest_1year.csv"
+OUT_CSV          = ROOT / "data/processed/backtest_2026.csv"
 
 # ── モデルロード ───────────────────────────────────────────────
 obj = joblib.load(ROOT / "data/models/lgbm_model.pkl")
