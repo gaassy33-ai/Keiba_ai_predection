@@ -62,6 +62,7 @@ JRA_TAKE = {"馬連": 0.225, "馬単": 0.25, "3連複": 0.225, "3連単": 0.275}
 
 # ── NAR 専用パラメータ ──────────────────────────────────────────
 # バックテスト結果（5,089レース）より最適化:
+#   対象会場: 盛岡(35), 水沢(36), 浦和(42), 大井(44)  ※netkeiba 内部コード
 #   prob≥0.35: ROI 181.9%（0.25-0.35帯は赤字）
 #   馬単 ROI 157.3% > 馬連 144.9% > 複勝 118.8% > 単勝 100.1%
 #   3連複/3連単は未検証のため除外
@@ -84,8 +85,7 @@ VENUE_COLORS: dict[str, str] = {
     "浦和": "#7b3f20", "船橋": "#1f5f7a", "大井": "#2c3e50",
     "川崎": "#6c3b8a", "金沢": "#7a6400", "笠松": "#3d5a3e",
     "名古屋": "#8b2500", "園田": "#4a5e6b", "姫路": "#5e3a6b",
-    "高知": "#4a7c4e", "佐賀": "#6b4c2a", "荒尾": "#5c4a2a",
-    "中津": "#4a3a6b", "帯広": "#1a3a5c",
+    "高知": "#4a7c4e", "佐賀": "#6b4c2a", "帯広": "#1a3a5c",
 }
 DEFAULT_COLOR = "#333333"
 
@@ -433,25 +433,41 @@ def predict_and_bet(
     )
 
     # --- 3連複 / 3連単: NAR は未検証のため除外 ---
-    pool: list[tuple[str, int]] = []   # (horse_number_str, valid_ids_index)
+    # pool: (馬番str, valid_ids_index_or_None)
+    # vi=None の馬（オッズ未取得）でもプールに加え、Harville はモデル確率で代替する
+    pool: list[tuple[str, int | None]] = []
     sanrenfuku_combos: list[tuple[str, str]] = []
     sanrentan_combos:  list[tuple[str, str]] = []
 
     if org != "nar":
         for _, row in partner_rows.iterrows():
             vi = vidx(str(row["horse_id"]))
-            if vi is not None:
-                pool.append((str(int(row["horse_number"])), vi))
+            pool.append((str(int(row["horse_number"])), vi))
+
+        # オッズ未取得時はモデル確率（正規化済み）でHarvilleを代替
+        _probs_raw = pred_df["win_prob"].tolist()
+        _probs_sum = sum(_probs_raw)
+        _model_probs = [p / _probs_sum for p in _probs_raw] if _probs_sum > 0 else _probs_raw
+        # pred_df index→確率 (0=本命, 1〜=相手順)
+        _partner_pred_idxs = {
+            num: i + 1
+            for i, (num, _vi) in enumerate(pool)
+        }
 
         sf_all: list[tuple[str, str, float]] = []
         for (num_a, vi_a), (num_b, vi_b) in _comb(pool, 2):
-            if hi is not None and mkt_probs:
+            if hi is not None and vi_a is not None and vi_b is not None and mkt_probs:
+                # オッズあり: 市場確率でHarville+トリガミ判定
                 p    = _prob_trio(mkt_probs, hi, vi_a, vi_b)
                 e_od = _est_odds(p, "3連複", org=org)
                 if e_od < TORIKAMI_THRESHOLD:
                     continue
             else:
-                e_od = 999.0
+                # オッズなし: モデル確率でHarvilleを推定（トリガミ判定は省略）
+                pa = _partner_pred_idxs.get(num_a, 1)
+                pb = _partner_pred_idxs.get(num_b, 2)
+                p    = _prob_trio(_model_probs, 0, pa, pb)
+                e_od = _est_odds(p, "3連複", org=org)
             sf_all.append((num_a, num_b, e_od))
 
         sf_all.sort(key=lambda x: -x[2])
@@ -465,13 +481,18 @@ def predict_and_bet(
 
         st_all: list[tuple[str, str, float]] = []
         for (num_2, vi_2), (num_3, vi_3) in _perm(pool, 2):
-            if hi is not None and mkt_probs:
+            if hi is not None and vi_2 is not None and vi_3 is not None and mkt_probs:
+                # オッズあり: 市場確率でHarville+トリガミ判定
                 p    = _prob_sanrentan(mkt_probs, hi, vi_2, vi_3)
                 e_od = _est_odds(p, "3連単", org=org)
                 if e_od < TORIKAMI_THRESHOLD:
                     continue
             else:
-                e_od = 999.0
+                # オッズなし: モデル確率でHarvilleを推定
+                p2 = _partner_pred_idxs.get(num_2, 1)
+                p3 = _partner_pred_idxs.get(num_3, 2)
+                p    = _prob_sanrentan(_model_probs, 0, p2, p3)
+                e_od = _est_odds(p, "3連単", org=org)
             st_all.append((num_2, num_3, e_od))
 
         st_all.sort(key=lambda x: -x[2])

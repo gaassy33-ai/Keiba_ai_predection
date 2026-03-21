@@ -30,8 +30,8 @@ RESULTS_CSV    = ROOT / "data" / "raw" / "nar_results.csv"
 META_CSV       = ROOT / "data" / "raw" / "nar_meta.csv"
 CHECKPOINT_PFX = str(ROOT / "data" / "raw" / "nar_checkpoint")
 
-# NAR 主要会場コード（11場）
-NAR_JYO_DEFAULT = ["34","35","36","37","38","39","40","42","43","44","45"]
+# NAR 主要会場コード（netkeiba 内部コード）
+NAR_JYO_DEFAULT = ["30","35","36","42","43","44","45","46","47","48","50","51","54","55","65"]
 
 # ── ロガー ─────────────────────────────────────────────────────
 Path("logs").mkdir(exist_ok=True)

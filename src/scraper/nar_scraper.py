@@ -24,33 +24,39 @@ class NARScraper(NetkeibaScraper):
     NAR（地方競馬）専用スクレイパー。
 
     JRA と異なる点:
-    - BASE_URL: https://db.nar.netkeiba.com
-    - RACE_URL: https://nar.netkeiba.com
-    - VENUE_CODE_TO_NAME: 地方競馬場コード (30〜48)
-    - race_id 形式: YYYYVVKKDDNN (VV=地方競馬場コード 30〜)
+    - BASE_URL: https://db.netkeiba.com（NAR 歴史データ）
+    - RACE_URL: https://nar.netkeiba.com（当日出走表・スケジュール）
+    - VENUE_CODE_TO_NAME: netkeiba 内部の地方競馬場コード
+    - race_id 形式: YYYY JJ MMDD NN
+        JJ   = 競馬場コード (42=浦和, 43=船橋, 44=大井, 50=園田 等)
+        MMDD = 開催日（月日）
+        NN   = レース番号
     - 出走表URL: nar.netkeiba.com/race/shutuba.html?race_id=...
     - スケジュールURL: nar.netkeiba.com/top/race_list.html?kaisai_date=...
     """
 
     ORG = "nar"
+    # netkeiba 内部の競馬場コード（JNRA公式コードとは異なる）
+    # race_id 形式: YYYY JJ MMDD NN
+    #   JJ   = 競馬場コード（下記）
+    #   MMDD = 開催日（月日）
+    #   NN   = レース番号
     VENUE_CODE_TO_NAME = {
         "30": "門別",
-        "31": "盛岡",
-        "32": "水沢",
-        "34": "浦和",
-        "35": "船橋",
-        "36": "大井",
-        "37": "川崎",
-        "38": "金沢",
-        "39": "笠松",
-        "40": "名古屋",
-        "42": "園田",
-        "43": "姫路",
-        "44": "高知",
-        "45": "佐賀",
-        "46": "荒尾",
-        "47": "中津",
-        "48": "帯広",
+        "35": "盛岡",
+        "36": "水沢",
+        "42": "浦和",
+        "43": "船橋",
+        "44": "大井",
+        "45": "川崎",
+        "46": "金沢",
+        "47": "笠松",
+        "48": "名古屋",
+        "50": "園田",
+        "51": "姫路",
+        "54": "高知",
+        "55": "佐賀",
+        "65": "帯広",
     }
 
     # db.nar.netkeiba.com は IP 制限あり。
