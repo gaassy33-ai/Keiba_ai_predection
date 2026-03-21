@@ -167,6 +167,22 @@
                       "color": "#7a5500",
                       "margin": "xs",
                       "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "3連複: 8-3-1 / 8-6-1 / 8-6-3 / 8-4-1 / 8-4-3",
+                      "size": "xs",
+                      "color": "#4a4a8a",
+                      "margin": "xs",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "3連単: 8→1→3 / 8→3→1 / 8→1→6 / 8→6→1 / 8→3→6",
+                      "size": "xs",
+                      "color": "#7a3a3a",
+                      "margin": "xs",
+                      "wrap": true
                     }
                   ]
                 }
@@ -220,6 +236,22 @@
                       "color": "#7a5500",
                       "margin": "xs",
                       "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "3連複: 9-3-1 / 9-7-1 / 9-6-1 / 9-7-3 / 9-6-3",
+                      "size": "xs",
+                      "color": "#4a4a8a",
+                      "margin": "xs",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "3連単: 9→1→3 / 9→3→1 / 9→1→7 / 9→7→1 / 9→1→6",
+                      "size": "xs",
+                      "color": "#7a3a3a",
+                      "margin": "xs",
+                      "wrap": true
                     }
                   ]
                 }
@@ -271,6 +303,22 @@
                       "text": "馬単: 10→5 / 10→7 / 10→1",
                       "size": "xs",
                       "color": "#7a5500",
+                      "margin": "xs",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "3連複: 10-8-2 / 10-1-2 / 10-1-8 / 10-7-2 / 10-7-8",
+                      "size": "xs",
+                      "color": "#4a4a8a",
+                      "margin": "xs",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "3連単: 10→2→8 / 10→8→2 / 10→2→1 / 10→1→2 / 10→8→1",
+                      "size": "xs",
+                      "color": "#7a3a3a",
                       "margin": "xs",
                       "wrap": true
                     }
@@ -438,6 +486,22 @@
                       "color": "#7a5500",
                       "margin": "xs",
                       "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "3連複: 8-5-9 / 8-2-9 / 8-2-5 / 8-3-9 / 8-1-9",
+                      "size": "xs",
+                      "color": "#4a4a8a",
+                      "margin": "xs",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "3連単: 8→1→3 / 8→1→2 / 8→1→5 / 8→1→9 / 8→3→1",
+                      "size": "xs",
+                      "color": "#7a3a3a",
+                      "margin": "xs",
+                      "wrap": true
                     }
                   ]
                 }
@@ -569,6 +633,22 @@
                       "text": "馬単: 6→9 / 6→5 / 6→1",
                       "size": "xs",
                       "color": "#7a5500",
+                      "margin": "xs",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "3連複: 6-3-4 / 6-1-4 / 6-1-3 / 6-5-4 / 6-5-3",
+                      "size": "xs",
+                      "color": "#4a4a8a",
+                      "margin": "xs",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "3連単: 6→4→3 / 6→3→4 / 6→4→1 / 6→1→4 / 6→3→1",
+                      "size": "xs",
+                      "color": "#7a3a3a",
                       "margin": "xs",
                       "wrap": true
                     }
@@ -1236,6 +1316,22 @@
                       "color": "#7a5500",
                       "margin": "xs",
                       "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "3連複: 6-8-16 / 6-9-16 / 6-1-16 / 6-13-16 / 6-9-8",
+                      "size": "xs",
+                      "color": "#4a4a8a",
+                      "margin": "xs",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "3連単: 6→13→8 / 6→13→16 / 6→1→9 / 6→1→8 / 6→1→16",
+                      "size": "xs",
+                      "color": "#7a3a3a",
+                      "margin": "xs",
+                      "wrap": true
                     }
                   ]
                 }
@@ -1315,6 +1411,22 @@
                       "text": "馬単: 5→4 / 5→8 / 5→6",
                       "size": "xs",
                       "color": "#7a5500",
+                      "margin": "xs",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "3連複: 5-9-2 / 5-6-2 / 5-8-2 / 5-6-9 / 5-8-9",
+                      "size": "xs",
+                      "color": "#4a4a8a",
+                      "margin": "xs",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "3連単: 5→4→9 / 5→4→2 / 5→8→6 / 5→8→9 / 5→8→2",
+                      "size": "xs",
+                      "color": "#7a3a3a",
                       "margin": "xs",
                       "wrap": true
                     }
