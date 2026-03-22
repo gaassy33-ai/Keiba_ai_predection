@@ -48,7 +48,7 @@ from config.settings import settings
 # ======================================================================
 # 定数
 # ======================================================================
-MIN_HONMEI_PROB      = 0.25   # ◎最低勝率（以下はケン）※バックテスト最適値
+MIN_HONMEI_PROB      = 0.15   # ◎最低勝率（以下はケン）※backtest_1year.pyと統一
 MIN_CONFIDENCE_GAP   = 0.05   # ◎-対抗 信頼度差（以下はケン）
 EV_PARTNER_TOP_N     = 5      # EV計算の候補プール（上位5頭）
 MAX_BAREN_TICKETS    = 3      # 馬連最大点数
