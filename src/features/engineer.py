@@ -276,6 +276,7 @@ class FeatureEngineer:
         if h.empty:
             df["recent_avg_pos"] = np.nan
             df["recent_avg_last3f"] = np.nan
+            df["recent_top3_rate"] = np.nan
             return df
 
         agg = (
