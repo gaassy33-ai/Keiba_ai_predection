@@ -49,8 +49,15 @@ from config.settings import settings
 # 定数
 # ======================================================================
 MIN_HONMEI_PROB      = 0.15   # ○最低勝率（以下は△）※backtest_1year.pyと統一
-MARK_STRONG_PROB     = 0.25   # ◎最低勝率（○との境界）
+MARK_STRONG_PROB     = 0.30   # ◎最低勝率（○との境界）改善①
 MIN_CONFIDENCE_GAP   = 0.05   # 勝率差フィルター（以下は△）
+# 改善②: 出走頭数ペナルティ（1頭増えるごとに+0.3%、上限+5%）
+ENTRIES_THRESHOLD_ADJ = 0.003   # per horse over 10
+ENTRIES_THRESHOLD_BASE = 10
+ENTRIES_THRESHOLD_CAP  = 0.05
+# 改善③: レースクラス別ブースト（未勝利・新馬は+5%上乗せ）
+MAIDEN_PROB_BOOST    = 0.05
+MAIDEN_KEYWORDS      = ("新馬", "未勝利")
 EV_PARTNER_TOP_N     = 5      # EV計算の候補プール（上位5頭）
 MAX_BAREN_TICKETS    = 3      # 馬連最大点数
 MAX_UMATAN_TICKETS   = 3      # 馬単最大点数
@@ -303,12 +310,20 @@ def predict_and_bet(
         "trainer_name":   e.trainer_name,
         "father":         e.father_name,
         "mother_father":  e.mother_father_name,
+        "odds":           e.odds,          # 改善⑥: HHI 計算用
     } for e in entries])
 
     # --- 特徴量生成 ---
     from src.scraper.weather import GROUND_CONDITION_MAP, WEATHER_MAP
     gc_code = GROUND_CONDITION_MAP.get(race_info.ground_condition, -1)
     wx_code = WEATHER_MAP.get(race_info.weather, -1)
+
+    # 改善④⑤: レースクラスコード・会場コード
+    race_class_code = FeatureEngineer._race_name_to_class_code(race_info.race_name or "")
+    try:
+        venue_code = int(race_info.race_id[4:6])
+    except Exception:
+        venue_code = -1
 
     try:
         feat_df = fe.build_entry_features(
@@ -317,6 +332,8 @@ def predict_and_bet(
             distance=race_info.distance,
             ground_condition_code=gc_code,
             weather_code=wx_code,
+            race_class_code=race_class_code,
+            venue_code=venue_code,
         )
     except Exception as e:
         logger.warning(f"特徴量生成失敗 {race_info.race_id}: {e}")
@@ -341,7 +358,20 @@ def predict_and_bet(
     honmei_prob = float(pred_df.iloc[0]["win_prob"])
     taikou_prob = float(pred_df.iloc[1]["win_prob"]) if len(pred_df) > 1 else 0.0
     gap = honmei_prob - taikou_prob
-    prob_threshold = NAR_MIN_HONMEI_PROB if org == "nar" else MIN_HONMEI_PROB
+    n_entries = len(entries)
+
+    # 改善②: 出走頭数に応じた動的閾値（多頭数は確率が薄まるため厳格化）
+    base_threshold = NAR_MIN_HONMEI_PROB if org == "nar" else MIN_HONMEI_PROB
+    entries_adj = min(
+        max(0, n_entries - ENTRIES_THRESHOLD_BASE) * ENTRIES_THRESHOLD_ADJ,
+        ENTRIES_THRESHOLD_CAP,
+    )
+    prob_threshold = base_threshold + entries_adj
+
+    # 改善③: 新馬・未勝利戦は閾値を追加ブースト
+    is_maiden = any(k in str(race_info.race_name) for k in MAIDEN_KEYWORDS)
+    if is_maiden:
+        prob_threshold += MAIDEN_PROB_BOOST
 
     gap_ok = gap >= MIN_CONFIDENCE_GAP
     if not gap_ok or honmei_prob < prob_threshold:
@@ -376,6 +406,8 @@ def predict_and_bet(
         "honmei_prob":        round(honmei_prob, 3),
         "taikou_prob":        round(taikou_prob, 3),
         "gap":                round(gap, 3),
+        "n_entries":          n_entries,
+        "is_maiden":          is_maiden,
         "baren_partners":     [],
         "umatan_partners":    [],
         "sanrenfuku_combos":  [],
