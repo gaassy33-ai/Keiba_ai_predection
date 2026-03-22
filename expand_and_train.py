@@ -36,15 +36,15 @@ logger.add(sys.stdout, level="INFO", format=_fmt, colorize=True)
 logger.add("logs/expand_train.log", level="DEBUG", format=_fmt, rotation="20 MB")
 
 # バックテスト開始日（この日以降はテスト期間として使わない）
-# 2025年末までを学習データとして利用し、2026年でバックテスト
-BACKTEST_START = "2026-01-01"
+# 利用可能な全データ（〜2026-03-15）を学習に使用
+BACKTEST_START = "2026-03-22"
 
 
 def main() -> None:
     t0 = time.time()
     logger.info("=" * 60)
     logger.info("JRA モデル拡張再学習")
-    logger.info(f"  学習期間: ~2025年末 (バックテスト: 2026年〜)")
+    logger.info(f"  学習期間: 2022〜2026-03-15 (利用可能な全データ)")
     logger.info("=" * 60)
 
     # ── 既存訓練データ読み込み ────────────────────────────────────
