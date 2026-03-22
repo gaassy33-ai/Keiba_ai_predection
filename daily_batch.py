@@ -48,8 +48,9 @@ from config.settings import settings
 # ======================================================================
 # 定数
 # ======================================================================
-MIN_HONMEI_PROB      = 0.15   # ◎最低勝率（以下はケン）※backtest_1year.pyと統一
-MIN_CONFIDENCE_GAP   = 0.05   # ◎-対抗 信頼度差（以下はケン）
+MIN_HONMEI_PROB      = 0.15   # ○最低勝率（以下は△）※backtest_1year.pyと統一
+MARK_STRONG_PROB     = 0.25   # ◎最低勝率（○との境界）
+MIN_CONFIDENCE_GAP   = 0.05   # 勝率差フィルター（以下は△）
 EV_PARTNER_TOP_N     = 5      # EV計算の候補プール（上位5頭）
 MAX_BAREN_TICKETS    = 3      # 馬連最大点数
 MAX_UMATAN_TICKETS   = 3      # 馬単最大点数
@@ -192,7 +193,7 @@ def load_history() -> pd.DataFrame:
 PREDICTIONS_LOG = ROOT / "docs" / "predictions_log.csv"
 PREDICTIONS_LOG_COLS = [
     "date", "race_id", "race_name", "honmei_num", "honmei_name",
-    "honmei_prob", "is_buy",
+    "honmei_prob", "taikou_prob", "gap", "mark", "is_buy",
     "tansho_hit", "tansho_ret",
     "umatan_str", "umatan_hit", "umatan_ret",
 ]
@@ -223,6 +224,9 @@ def _save_prediction_log(
                 "honmei_num":   hon,
                 "honmei_name":  r["honmei_name"],
                 "honmei_prob":  r["honmei_prob"],
+                "taikou_prob":  r.get("taikou_prob", ""),
+                "gap":          r.get("gap", ""),
+                "mark":         r.get("mark", "△"),
                 "is_buy":       r["is_buy"],
                 "tansho_hit":   "",
                 "tansho_ret":   "",
@@ -333,18 +337,25 @@ def predict_and_bet(
     pred_df["win_prob"] = probs
     pred_df = pred_df.sort_values("win_prob", ascending=False).reset_index(drop=True)
 
-    # --- レース絞り込み ---
+    # --- マーク判定 ---
     honmei_prob = float(pred_df.iloc[0]["win_prob"])
     taikou_prob = float(pred_df.iloc[1]["win_prob"]) if len(pred_df) > 1 else 0.0
+    gap = honmei_prob - taikou_prob
     prob_threshold = NAR_MIN_HONMEI_PROB if org == "nar" else MIN_HONMEI_PROB
-    is_skip = (
-        honmei_prob < prob_threshold
-        or (honmei_prob - taikou_prob) < MIN_CONFIDENCE_GAP
-    )
+
+    gap_ok = gap >= MIN_CONFIDENCE_GAP
+    if not gap_ok or honmei_prob < prob_threshold:
+        mark = "△"
+    elif honmei_prob >= MARK_STRONG_PROB:
+        mark = "◎"
+    else:
+        mark = "○"
+
+    is_skip = (mark == "△")
+
     logger.info(
-        f"  probs: ◎{pred_df.iloc[0]['horse_name']}={honmei_prob:.4f}"
-        f"  対抗={taikou_prob:.4f}  threshold={prob_threshold:.2f}"
-        f"  {'→ケン' if is_skip else '→◎'}"
+        f"  probs: {mark}{pred_df.iloc[0]['horse_name']}={honmei_prob:.4f}"
+        f"  対抗={taikou_prob:.4f}  差={gap:.4f}"
     )
 
     honmei_row = pred_df.iloc[0]
@@ -358,14 +369,17 @@ def predict_and_bet(
         "race_id":            race_info.race_id,
         "race_name":          race_info.race_name,
         "race_num":           race_num_str,
-        "is_buy":             False,
+        "is_buy":             not is_skip,
+        "mark":               mark,
         "honmei_num":         honmei_num,
         "honmei_name":        honmei_name,
         "honmei_prob":        round(honmei_prob, 3),
+        "taikou_prob":        round(taikou_prob, 3),
+        "gap":                round(gap, 3),
         "baren_partners":     [],
-        "umatan_partners":    [],   # [(num_2nd), ...] ◎1着固定の相手馬番リスト
-        "sanrenfuku_combos":  [],   # [(num_a, num_b), ...]
-        "sanrentan_combos":   [],   # [(num_2nd, num_3rd), ...]
+        "umatan_partners":    [],
+        "sanrenfuku_combos":  [],
+        "sanrentan_combos":   [],
     }
 
     if is_skip:
@@ -521,93 +535,131 @@ def predict_and_bet(
 
 def _race_row_component(race_result: dict | None, race_num: int) -> list[dict]:
     """1レース分の行コンポーネント（separator + box）を返す"""
-    label = f"{race_num:>2}R"  # 右詰めで幅を揃える（1R→" 1R"）
+    label = f"{race_num:>2}R"
 
-    if race_result is None or not race_result.get("is_buy"):
-        # 見送りレース
+    # データ取得失敗レース
+    if race_result is None:
         body_content = {
             "type": "box",
             "layout": "horizontal",
             "paddingStart": "14px", "paddingEnd": "14px",
             "paddingTop": "7px", "paddingBottom": "7px",
             "contents": [
-                {
-                    "type": "text", "text": label,
-                    "size": "sm", "color": "#cccccc",
-                    "flex": 0,
-                },
-                {
-                    "type": "text", "text": "— 見送り",
-                    "size": "sm", "color": "#cccccc",
-                    "flex": 1, "margin": "md",
-                },
+                {"type": "text", "text": label,
+                 "size": "sm", "color": "#cccccc", "flex": 0},
+                {"type": "text", "text": "— データなし",
+                 "size": "sm", "color": "#cccccc", "flex": 1, "margin": "md"},
             ],
         }
-    else:
-        # 購入レース
-        hon_num  = race_result["honmei_num"]
-        hon_name = race_result["honmei_name"]
-        partners    = race_result.get("baren_partners", [])
-        um_partners = race_result.get("umatan_partners", [])
-        sf_combos   = race_result.get("sanrenfuku_combos", [])
-        st_combos   = race_result.get("sanrentan_combos", [])
+        return [{"type": "separator"}, body_content]
 
-        baren_str = (
-            f"馬連: {hon_num}-{' / '.join(partners)}"
-            if partners else "馬連: なし"
-        )
-        umatan_str = (
-            "馬単: " + " / ".join(f"{hon_num}→{p}" for p in um_partners)
-            if um_partners else "馬単: なし"
-        )
-        sf_str = (
-            "3連複: " + " / ".join(f"{hon_num}-{a}-{b}" for a, b in sf_combos)
-            if sf_combos else "3連複: なし"
-        )
-        st_str = (
-            "3連単: " + " / ".join(f"{hon_num}→{n2}→{n3}" for n2, n3 in st_combos)
-            if st_combos else "3連単: なし"
-        )
+    mark     = race_result.get("mark", "△")
+    hon_num  = race_result["honmei_num"]
+    hon_name = race_result["honmei_name"]
+    prob     = race_result["honmei_prob"]
+    t_prob   = race_result.get("taikou_prob", 0.0)
+    gap      = race_result.get("gap", 0.0)
 
-        detail_items = [
-            {"type": "text", "text": f"◎{hon_num} {hon_name}（単・複）",
-             "size": "sm", "weight": "bold", "color": "#1a5533", "wrap": True},
-            {"type": "text", "text": baren_str,
-             "size": "xs", "color": "#555555", "margin": "xs", "wrap": True},
-            {"type": "text", "text": umatan_str,
-             "size": "xs", "color": "#7a5500", "margin": "xs", "wrap": True},
-        ]
-        # 3連複・3連単はコンボがある場合のみ表示（NAR では無効のため非表示）
-        if sf_combos:
-            detail_items.append(
-                {"type": "text", "text": sf_str,
-                 "size": "xs", "color": "#4a4a8a", "margin": "xs", "wrap": True}
-            )
-        if st_combos:
-            detail_items.append(
-                {"type": "text", "text": st_str,
-                 "size": "xs", "color": "#7a3a3a", "margin": "xs", "wrap": True}
-            )
+    # 確率サマリー行（全レース共通）
+    prob_str = f"{prob:.1%}  差+{gap:.1%}  対抗{t_prob:.1%}"
 
+    if mark == "◎":
+        label_color  = "#1a5533"
+        label_weight = "bold"
+    elif mark == "○":
+        label_color  = "#7a5500"
+        label_weight = "bold"
+    else:  # △
+        label_color  = "#999999"
+        label_weight = "regular"
+
+    # ── △（見送り）: 馬名 + 確率のみ ──────────────────────────
+    if mark == "△":
         body_content = {
             "type": "box",
             "layout": "horizontal",
             "paddingStart": "14px", "paddingEnd": "14px",
-            "paddingTop": "9px", "paddingBottom": "9px",
+            "paddingTop": "7px", "paddingBottom": "7px",
             "contents": [
+                {"type": "text", "text": label,
+                 "size": "sm", "color": label_color, "flex": 0},
                 {
-                    "type": "text", "text": label,
-                    "size": "sm", "weight": "bold", "color": "#1a5533",
-                    "flex": 0,
-                },
-                {
-                    "type": "box",
-                    "layout": "vertical",
+                    "type": "box", "layout": "vertical",
                     "flex": 1, "margin": "md",
-                    "contents": detail_items,
+                    "contents": [
+                        {"type": "text",
+                         "text": f"△ {hon_num} {hon_name}",
+                         "size": "sm", "color": "#999999", "wrap": True},
+                        {"type": "text", "text": prob_str,
+                         "size": "xs", "color": "#bbbbbb", "margin": "xs", "wrap": True},
+                    ],
                 },
             ],
         }
+        return [{"type": "separator"}, body_content]
+
+    # ── ◎ / ○: 馬券情報あり ──────────────────────────────────
+    partners    = race_result.get("baren_partners", [])
+    um_partners = race_result.get("umatan_partners", [])
+    sf_combos   = race_result.get("sanrenfuku_combos", [])
+    st_combos   = race_result.get("sanrentan_combos", [])
+
+    baren_str = (
+        f"馬連: {hon_num}-{' / '.join(partners)}"
+        if partners else "馬連: なし"
+    )
+    umatan_str = (
+        "馬単: " + " / ".join(f"{hon_num}→{p}" for p in um_partners)
+        if um_partners else "馬単: なし"
+    )
+    sf_str = (
+        "3連複: " + " / ".join(f"{hon_num}-{a}-{b}" for a, b in sf_combos)
+        if sf_combos else "3連複: なし"
+    )
+    st_str = (
+        "3連単: " + " / ".join(f"{hon_num}→{n2}→{n3}" for n2, n3 in st_combos)
+        if st_combos else "3連単: なし"
+    )
+
+    ticket_color  = "#555555"
+    umatan_color  = "#7a5500"
+    sf_color      = "#4a4a8a"
+    st_color      = "#7a3a3a"
+
+    detail_items: list[dict] = [
+        {"type": "text",
+         "text": f"{mark}{hon_num} {hon_name}（単・複）",
+         "size": "sm", "weight": "bold", "color": label_color, "wrap": True},
+        {"type": "text", "text": prob_str,
+         "size": "xs", "color": "#888888", "margin": "xs", "wrap": True},
+        {"type": "text", "text": baren_str,
+         "size": "xs", "color": ticket_color, "margin": "xs", "wrap": True},
+        {"type": "text", "text": umatan_str,
+         "size": "xs", "color": umatan_color, "margin": "xs", "wrap": True},
+    ]
+    if sf_combos:
+        detail_items.append(
+            {"type": "text", "text": sf_str,
+             "size": "xs", "color": sf_color, "margin": "xs", "wrap": True}
+        )
+    if st_combos:
+        detail_items.append(
+            {"type": "text", "text": st_str,
+             "size": "xs", "color": st_color, "margin": "xs", "wrap": True}
+        )
+
+    body_content = {
+        "type": "box",
+        "layout": "horizontal",
+        "paddingStart": "14px", "paddingEnd": "14px",
+        "paddingTop": "9px", "paddingBottom": "9px",
+        "contents": [
+            {"type": "text", "text": label,
+             "size": "sm", "weight": label_weight, "color": label_color, "flex": 0},
+            {"type": "box", "layout": "vertical",
+             "flex": 1, "margin": "md", "contents": detail_items},
+        ],
+    }
 
     return [{"type": "separator"}, body_content]
 
@@ -630,8 +682,10 @@ def _build_venue_bubble(
                 continue
             by_num[n] = r
 
-    buy_count = sum(1 for r in by_num.values() if r and r.get("is_buy"))
-    total_count = len(by_num)
+    strong_count = sum(1 for r in by_num.values() if r and r.get("mark") == "◎")
+    ok_count     = sum(1 for r in by_num.values() if r and r.get("mark") == "○")
+    buy_count    = strong_count + ok_count
+    total_count  = len(by_num)
 
     # レース行を生成（1R〜12R）
     race_row_components: list[dict] = []
@@ -683,7 +737,7 @@ def _build_venue_bubble(
             "contents": [
                 {
                     "type": "text",
-                    "text": f"参加 {buy_count}R / {total_count}R中",
+                    "text": f"◎{strong_count}R  ○{ok_count}R  △{total_count - buy_count}R  計{total_count}R",
                     "size": "xs",
                     "color": "#888888",
                     "align": "center",

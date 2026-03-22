@@ -25,7 +25,7 @@ sys.path.insert(0, str(ROOT))
 from src.features.engineer import FeatureEngineer
 
 # ── 設定 ──────────────────────────────────────────────────────
-DATE_FROM        = "2026-01-01"   # 2024+2025学習後、2026年でバックテスト
+DATE_FROM        = "2026-01-01"
 MIN_HONMEI_PROB  = 0.15
 MIN_GAP          = 0.05
 EV_POOL          = 5
