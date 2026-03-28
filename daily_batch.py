@@ -51,6 +51,9 @@ from config.settings import settings
 MIN_HONMEI_PROB      = 0.15   # ○最低勝率（以下は△）※backtest_1year.pyと統一
 MARK_STRONG_PROB     = 0.30   # ◎最低勝率（○との境界）改善①
 MIN_CONFIDENCE_GAP   = 0.05   # 勝率差フィルター（以下は△）
+# 改善⑨: EV フィルタ（model_prob × odds ≥ 閾値 のみ買い）
+# 市場が過小評価している馬のみ選別してバリュー投資を実現
+EV_THRESHOLD         = 1.05   # 5% のポジティブエッジを要求（backtest と統一）
 # 改善②: 出走頭数ペナルティ（1頭増えるごとに+0.3%、上限+5%）
 ENTRIES_THRESHOLD_ADJ = 0.003   # per horse over 10
 ENTRIES_THRESHOLD_BASE = 10
@@ -374,7 +377,16 @@ def predict_and_bet(
         prob_threshold += MAIDEN_PROB_BOOST
 
     gap_ok = gap >= MIN_CONFIDENCE_GAP
-    if not gap_ok or honmei_prob < prob_threshold:
+
+    # 改善⑨: EV フィルタ — feat_df["odds"] は build_entry_features で付加済み
+    honmei_id_str = str(pred_df.iloc[0]["horse_id"])
+    odds_col_map  = feat_df.set_index("horse_id")["odds"] if "odds" in feat_df.columns else {}
+    honmei_odds_pre = float(odds_col_map.get(honmei_id_str, float("nan")))
+    honmei_ev = (honmei_prob * honmei_odds_pre
+                 if not np.isnan(honmei_odds_pre) else 0.0)
+    ev_ok = honmei_ev >= EV_THRESHOLD
+
+    if not gap_ok or honmei_prob < prob_threshold or not ev_ok:
         mark = "△"
     elif honmei_prob >= MARK_STRONG_PROB:
         mark = "◎"
@@ -386,6 +398,7 @@ def predict_and_bet(
     logger.info(
         f"  probs: {mark}{pred_df.iloc[0]['horse_name']}={honmei_prob:.4f}"
         f"  対抗={taikou_prob:.4f}  差={gap:.4f}"
+        f"  EV={honmei_ev:.2f}({'OK' if ev_ok else 'NG'})"
     )
 
     honmei_row = pred_df.iloc[0]

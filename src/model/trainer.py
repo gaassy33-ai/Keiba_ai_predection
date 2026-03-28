@@ -38,6 +38,9 @@ class ModelTrainer:
     #   - learning_rate: 0.05 → 0.02（細かいステップで収束・木数増加）
     #   - num_leaves: 63 → 127（全会場データ増加に対応した表現力向上）
     #   - EARLY_STOPPING_ROUNDS: 50 → 100（早期終了を緩和して十分探索）
+    # 改善⑨: odds_log/popularity_rank_norm を FEATURE_COLUMNS から除外
+    #   個別馬オッズは予測特徴量ではなく EV フィルタとして post-prediction 活用
+    #   → モデルがバリュー馬を独立に発見できる設計に戻す
     # ----------------------------------------------------------------
     LGBM_PARAMS = {
         "objective": "binary",

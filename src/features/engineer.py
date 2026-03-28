@@ -301,9 +301,12 @@ class FeatureEngineer:
         df["market_hhi"] = hhi
 
         # 改善⑧: オッズ特徴量（log変換 + レース内人気順位正規化）
+        # 2026年傾向対応: 30倍上限キャップで極端な長期人気の影響を抑制
         if "odds" in df.columns:
             odds_num = pd.to_numeric(df["odds"], errors="coerce")
-            df["odds_log"] = np.log1p(odds_num)
+            # 30倍超は同一視（波乱傾向増加に対してモデルが過度にフォローするのを防ぐ）
+            odds_capped = odds_num.clip(upper=30.0)
+            df["odds_log"] = np.log1p(odds_capped)
             pop_rank = odds_num.rank(method="min", ascending=True)
             n_horses = pop_rank.max()
             df["popularity_rank_norm"] = (
@@ -829,7 +832,9 @@ class FeatureEngineer:
         # 改善⑦: 前走パフォーマンス
         "prev_margin",
         "prev_last3f_rank_norm",
-        # 改善⑧: オッズ特徴量（市場情報）
-        "odds_log",
-        "popularity_rank_norm",
+        # NOTE: odds_log / popularity_rank_norm は FEATURE_COLUMNS に含めない。
+        # 理由: 個別馬のオッズを直接予測に使うとモデルが「市場の複写」になり
+        #       バリュー馬を発見できなくなる。
+        #       代わりに予測後の EV フィルタ（model_prob × odds ≥ EV_THRESHOLD）
+        #       として post-prediction で活用する。
     ]

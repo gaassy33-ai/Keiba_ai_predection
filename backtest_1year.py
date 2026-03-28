@@ -28,6 +28,9 @@ from src.features.engineer import FeatureEngineer
 DATE_FROM        = "2026-01-01"
 MIN_HONMEI_PROB  = 0.15
 MIN_GAP          = 0.05
+# 改善⑨: EV フィルタ（model_prob × actual_odds ≥ 閾値 のみ買い）
+# 市場が過小評価している馬のみ選別し ROI を向上させる
+EV_THRESHOLD     = 1.05   # 5% のポジティブエッジを要求
 EV_POOL          = 5
 MAX_BAREN        = 3
 MAX_UMATAN       = 3
@@ -176,7 +179,17 @@ for i, race_id in enumerate(target_ids):
     taikou_prob = float(pred_df.iloc[1]["prob"]) if len(pred_df) > 1 else 0.0
     gap = honmei_prob - taikou_prob
 
-    is_skip = honmei_prob < MIN_HONMEI_PROB or gap < MIN_GAP
+    # 改善⑨: EV フィルタ — feat_df["odds"] は build_entry_features で付加済み
+    honmei_id  = str(pred_df.iloc[0]["horse_id"])
+    odds_col   = feat_df.set_index("horse_id")["odds"] if "odds" in feat_df.columns else {}
+    honmei_odds_pre = float(odds_col.get(honmei_id, float("nan")))
+    honmei_ev  = honmei_prob * honmei_odds_pre if not np.isnan(honmei_odds_pre) else 0.0
+
+    is_skip = (
+        honmei_prob < MIN_HONMEI_PROB
+        or gap < MIN_GAP
+        or honmei_ev < EV_THRESHOLD
+    )
 
     # 実際の結果
     actual = race_entries.copy()
@@ -219,6 +232,7 @@ for i, race_id in enumerate(target_ids):
         "honmei_prob": round(honmei_prob, 4),
         "taikou_prob": round(taikou_prob, 4),
         "gap": round(gap, 4),
+        "honmei_ev": round(honmei_ev, 4),   # 改善⑨: EV = model_prob × odds
         "is_skip": int(is_skip),
         "honmei_pos": honmei_pos,
         "honmei_odds": honmei_odds_v,
