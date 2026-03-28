@@ -134,6 +134,17 @@ for i, race_id in enumerate(target_ids):
     entry_df["mother_father"] = ""
     if "trainer_name" not in entry_df.columns:
         entry_df["trainer_name"] = ""
+    # ★カラムずれ: "last_3f" 列が実際の単勝オッズ（odds_log/popularity_rank_norm 用）
+    if "last_3f" in race_entries.columns:
+        entry_df["odds"] = pd.to_numeric(race_entries["last_3f"].values, errors="coerce")
+
+    # レースクラスコード・会場コード
+    from src.features.engineer import FeatureEngineer as _FE
+    race_class_code = _FE._race_name_to_class_code(race_name)
+    try:
+        venue_code = int(race_id[4:6])
+    except Exception:
+        venue_code = -1
 
     # 特徴量生成
     try:
@@ -143,6 +154,8 @@ for i, race_id in enumerate(target_ids):
             distance=distance,
             ground_condition_code=gc_code,
             weather_code=wx_code,
+            race_class_code=race_class_code,
+            venue_code=venue_code,
         )
     except Exception as e:
         continue

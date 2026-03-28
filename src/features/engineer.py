@@ -300,6 +300,19 @@ class FeatureEngineer:
             hhi = float("nan")
         df["market_hhi"] = hhi
 
+        # 改善⑧: オッズ特徴量（log変換 + レース内人気順位正規化）
+        if "odds" in df.columns:
+            odds_num = pd.to_numeric(df["odds"], errors="coerce")
+            df["odds_log"] = np.log1p(odds_num)
+            pop_rank = odds_num.rank(method="min", ascending=True)
+            n_horses = pop_rank.max()
+            df["popularity_rank_norm"] = (
+                (pop_rank - 1) / (n_horses - 1) if n_horses > 1 else 0.0
+            )
+        else:
+            df["odds_log"] = np.nan
+            df["popularity_rank_norm"] = np.nan
+
         # ── 調教師勝率・連対率 ────────────────────────────────────────
         if self._trainer_stats is not None and "trainer_name" in df.columns:
             df = df.merge(self._trainer_stats, on="trainer_name", how="left")
@@ -816,4 +829,7 @@ class FeatureEngineer:
         # 改善⑦: 前走パフォーマンス
         "prev_margin",
         "prev_last3f_rank_norm",
+        # 改善⑧: オッズ特徴量（市場情報）
+        "odds_log",
+        "popularity_rank_norm",
     ]
