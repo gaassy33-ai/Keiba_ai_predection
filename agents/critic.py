@@ -21,10 +21,13 @@ import sys
 from datetime import date, datetime
 from pathlib import Path
 
+from dotenv import load_dotenv
 from loguru import logger
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+
+load_dotenv(ROOT / ".env", override=True)
 
 from agents.base import AgentBase
 

@@ -55,7 +55,7 @@ class Reviewer(AgentBase):
             self.save(review, self.review_file(target_date))
             return review
 
-        logger.info(f"本日の予想: {len(predictions)} レース（うち買い: {sum(1 for p in predictions if p.get('is_buy'))}件）")
+        logger.info(f"本日の予想: {len(predictions)} レース（うち買い: {sum(1 for p in predictions if p.get('is_buy') == 'True')}件）")
 
         # 結果を取得・照合
         results = self._fetch_and_match(predictions)
@@ -214,7 +214,7 @@ class Reviewer(AgentBase):
 
         n = len(ok)
         hits = sum(1 for r in ok if r["tansho_hit"])
-        roi  = sum(r["tansho_ret"] for r in ok) / (n * 100) if n else 0
+        roi  = sum(r["tansho_ret"] or 0 for r in ok) / (n * 100) if n else 0
 
         # ミス分析: 実際の着順が2〜3着（惜しい）
         near_miss = [r for r in ok if r["actual_pos"] in (2, 3)]
