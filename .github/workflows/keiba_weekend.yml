@@ -19,8 +19,12 @@ on:
     - cron: "0 22 * * 5"    # 金 22:00 UTC = 土 07:00 JST
     - cron: "0 22 * * 6"    # 土 22:00 UTC = 日 07:00 JST
 
-    # ② 週末まとめ
+    # ② 夕方バッチ（振り返り君 + 評論家）
+    - cron: "0 8 * * 6"     # 土 08:00 UTC = 土 17:00 JST
     - cron: "0 8 * * 0"     # 日 08:00 UTC = 日 17:00 JST
+
+    # ③ 週末まとめ（日曜 17:30 JST）
+    - cron: "30 8 * * 0"    # 日 08:30 UTC = 日 17:30 JST
 
   # 手動実行（デバッグ・祝日開催など）
   workflow_dispatch:
@@ -28,7 +32,7 @@ on:
       mode:
         description: "実行モード"
         type: choice
-        options: [morning, summary, test]
+        options: [morning, evening, summary, test]
         default: morning
 
 
@@ -42,7 +46,7 @@ jobs:
     name: 朝バッチ（全会場・全レース一括配信）
     if: |
       (github.event_name == 'schedule' && (github.event.schedule == '0 22 * * 5' || github.event.schedule == '0 22 * * 6'))
-      || (github.event_name == 'workflow_dispatch' && (github.event.inputs.mode == 'morning' || github.event.inputs.mode == 'test'))
+      || (github.event_name == 'workflow_dispatch' && (github.event.inputs.mode == 'morning' || github.event.inputs.mode == 'test' || github.event.inputs.mode == 'evening'))
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
@@ -115,6 +119,18 @@ jobs:
           python daily_batch.py \
             --date "${{ steps.resolve_date.outputs.date }}"
 
+      - name: データマスター実行（週次統計 LINE 通知）
+        if: github.event.inputs.mode != 'test'
+        env:
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          LINE_CHANNEL_SECRET: ${{ secrets.LINE_CHANNEL_SECRET }}
+          LINE_TARGET_USER_ID: ${{ secrets.LINE_TARGET_USER_ID }}
+          TZ: "Asia/Tokyo"
+        run: |
+          python -m agents.coordinator \
+            --phase morning \
+            --date "${{ steps.resolve_date.outputs.date }}"
+
       - name: 失敗時 LINE エラー通知
         if: failure()
         env:
@@ -155,13 +171,89 @@ jobs:
 
 
 # ==================================================================
-# ② 週末まとめレポート（日曜 17:00 JST）
-#    cron: "0 8 * * 0" のみ実行
+# ② 夕方バッチ（振り返り君 + 評論家）
+#    土日 17:00 JST: 振り返り君でレース結果照合 → 評論家でClaude評価
+# ==================================================================
+  evening:
+    name: 夕方バッチ（振り返り君＋評論家）
+    if: |
+      (github.event_name == 'schedule' && (github.event.schedule == '0 8 * * 6' || github.event.schedule == '0 8 * * 0'))
+      || (github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'evening')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    concurrency:
+      group: keiba-evening
+      cancel-in-progress: false
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Resolve target date (JST)
+        id: resolve_date
+        env:
+          TZ: "Asia/Tokyo"
+        run: echo "date=$(date '+%Y-%m-%d')" >> "$GITHUB_OUTPUT"
+
+      - name: 夕方バッチ実行（振り返り君 + 評論家）
+        env:
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          LINE_CHANNEL_SECRET: ${{ secrets.LINE_CHANNEL_SECRET }}
+          LINE_TARGET_USER_ID: ${{ secrets.LINE_TARGET_USER_ID }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          TZ: "Asia/Tokyo"
+        run: |
+          python -m agents.coordinator \
+            --phase evening \
+            --date "${{ steps.resolve_date.outputs.date }}"
+
+      - name: 失敗時 LINE エラー通知
+        if: failure()
+        env:
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          LINE_TARGET_USER_ID: ${{ secrets.LINE_TARGET_USER_ID }}
+        run: |
+          python - <<'EOF'
+          import os, requests
+          token   = os.environ["LINE_CHANNEL_ACCESS_TOKEN"]
+          user_id = os.environ["LINE_TARGET_USER_ID"]
+          requests.post(
+              "https://api.line.me/v2/bot/message/push",
+              headers={"Content-Type": "application/json",
+                       "Authorization": f"Bearer {token}"},
+              json={"to": user_id, "messages": [
+                  {"type": "text",
+                   "text": "⚠️ 夕方バッチ（振り返り君/評論家）が失敗しました。\nGitHub Actions のログを確認してください。"}
+              ]}, timeout=10,
+          )
+          EOF
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: evening-logs-${{ github.run_id }}
+          path: logs/
+          retention-days: 7
+
+
+# ==================================================================
+# ③ 週末まとめレポート（日曜 17:30 JST）
+#    cron: "30 8 * * 0" のみ実行
 # ==================================================================
   weekly_summary:
     name: 週末まとめレポート
     if: |
-      (github.event_name == 'schedule' && github.event.schedule == '0 8 * * 0')
+      (github.event_name == 'schedule' && github.event.schedule == '30 8 * * 0')
       || (github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'summary')
     runs-on: ubuntu-latest
     timeout-minutes: 30

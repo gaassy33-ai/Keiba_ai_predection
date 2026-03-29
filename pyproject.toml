@@ -43,6 +43,7 @@ dependencies = [
     "joblib>=1.3.0",
     "tenacity>=8.2.3",     # リトライ
     "loguru>=0.7.2",       # ロギング
+    "anthropic>=0.30.0",   # Claude API（評論家エージェント）
 ]
 
 [project.optional-dependencies]
