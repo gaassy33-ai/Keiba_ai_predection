@@ -6,11 +6,13 @@ daily_batch.py
     python daily_batch.py                    # 当日
     python daily_batch.py --date 2026-03-08  # 日付指定
 
-買い目（単勝 + 馬連のみ・回収率100%超券種に絞り込み）:
+買い目（回収率100%超券種に絞り込み）:
     - レース絞り込み: honmei_prob ≥ 0.15 かつ 信頼度差 ≥ 0.05
     - 単勝: ◎ 1点
     - 複勝: ◎ 1点（参考表示）
-    - 馬連: ◎ - EV上位3頭 最大3点（トリガミ除外）
+    - 馬連: ◎ - モデル上位5頭から EV 上位 最大3点（トリガミ除外）
+    - 3連複: ◎軸 × モデル上位5頭 → Harville降順 最大5点（合成オッズ<1.0はケン）
+    - 3連単: ◎1着固定 × モデル上位5頭 → Harville降順 最大5点（合成オッズ<1.0はケン）
 
 環境変数 (.env):
     LINE_CHANNEL_ACCESS_TOKEN
@@ -25,6 +27,7 @@ import json
 import sys
 import time
 from datetime import date
+from itertools import combinations as _comb, permutations as _perm
 from pathlib import Path
 
 import numpy as np
@@ -37,28 +40,74 @@ sys.path.insert(0, str(ROOT))
 
 from src.features.engineer import FeatureEngineer
 from src.model.trainer import ModelTrainer
-from src.scraper.netkeiba_scraper import NetkeibaScraper, RaceInfo
+from src.scraper.base_scraper import RaceInfo
+from src.scraper.netkeiba_scraper import NetkeibaScraper
+from src.scraper.nar_scraper import NARScraper
 from config.settings import settings
 
 # ======================================================================
 # 定数
 # ======================================================================
-MIN_HONMEI_PROB    = 0.15   # ◎最低勝率（以下はケン）
-MIN_CONFIDENCE_GAP = 0.05   # ◎-対抗 信頼度差（以下はケン）
-EV_PARTNER_TOP_N   = 5      # EV計算の候補プール（上位5頭から選ぶ）
-MAX_BAREN_TICKETS  = 3      # 馬連最大点数
-TORIKAMI_THRESHOLD = 1.05   # トリガミ判定閾値（推定オッズがこれ未満は除外）
+MIN_HONMEI_PROB      = 0.15   # ○最低勝率（以下は△）※backtest_1year.pyと統一
+MARK_STRONG_PROB     = 0.30   # ◎最低勝率（○との境界）改善①
+MIN_CONFIDENCE_GAP   = 0.05   # 勝率差フィルター（以下は△）
+# 改善⑨: EV フィルタ（model_prob × odds ≥ 閾値 のみ買い）
+# 市場が過小評価している馬のみ選別してバリュー投資を実現
+EV_THRESHOLD         = 1.05   # 5% のポジティブエッジを要求（backtest と統一）
+# 改善②: 出走頭数ペナルティ（1頭増えるごとに+0.3%、上限+5%）
+ENTRIES_THRESHOLD_ADJ = 0.003   # per horse over 10
+ENTRIES_THRESHOLD_BASE = 10
+ENTRIES_THRESHOLD_CAP  = 0.05
+# 改善③: レースクラス別ブースト（未勝利・新馬は+5%上乗せ）
+MAIDEN_PROB_BOOST    = 0.05
+MAIDEN_KEYWORDS      = ("新馬", "未勝利")
+EV_PARTNER_TOP_N     = 5      # EV計算の候補プール（上位5頭）
+MAX_BAREN_TICKETS    = 3      # 馬連最大点数
+MAX_UMATAN_TICKETS   = 3      # 馬単最大点数
+MAX_SANRENFUKU_TICKETS = 5    # 3連複最大点数
+MAX_SANRENTAN_TICKETS  = 5    # 3連単最大点数
+TORIKAMI_THRESHOLD   = 1.05   # トリガミ判定閾値（推定オッズがこれ未満は除外）
 
 # JRA 控除率
-JRA_TAKE = {"馬連": 0.225}
+JRA_TAKE = {"馬連": 0.225, "馬単": 0.25, "3連複": 0.225, "3連単": 0.275}
+
+# ── NAR 専用パラメータ ──────────────────────────────────────────
+# バックテスト結果（5,089レース）より最適化:
+#   対象会場: 盛岡(35), 水沢(36), 浦和(42), 大井(44)  ※netkeiba 内部コード
+#   prob≥0.35: ROI 181.9%（0.25-0.35帯は赤字）
+#   馬単 ROI 157.3% > 馬連 144.9% > 複勝 118.8% > 単勝 100.1%
+#   3連複/3連単は未検証のため除外
+#
+# ※ 推論時は jockey_id が部分的に欠損するため確率が圧縮される。
+#   バックテスト（完全特徴量）の 0.35 相当 → 推論では 0.25 前後に対応。
+#   信頼度差 ≥ 0.05 の二次フィルターで精度を担保する。
+NAR_MIN_HONMEI_PROB  = 0.25   # 推論時の特徴量欠損を考慮して調整
+NAR_WIN_BLEND        = 0.85   # win_model の重み（JRA=0.70）馬単重視のため勝ちモデルを優先
+NAR_TAKE = {"馬連": 0.25, "馬単": 0.25}  # NAR 控除率（JRA より高め）
 
 VENUE_COLORS: dict[str, str] = {
+    # JRA
     "札幌": "#1a5276", "函館": "#154360", "福島": "#4a7c4e",
     "新潟": "#8b4513", "東京": "#1a472a", "中山": "#8b0000",
     "中京": "#b8860b", "京都": "#6b4c9a", "阪神": "#1b3a6b",
     "小倉": "#2f6b9a",
+    # NAR（地方競馬）
+    "門別": "#2e4057", "盛岡": "#4d7c5f", "水沢": "#5c6b4a",
+    "浦和": "#7b3f20", "船橋": "#1f5f7a", "大井": "#2c3e50",
+    "川崎": "#6c3b8a", "金沢": "#7a6400", "笠松": "#3d5a3e",
+    "名古屋": "#8b2500", "園田": "#4a5e6b", "姫路": "#5e3a6b",
+    "高知": "#4a7c4e", "佐賀": "#6b4c2a", "帯広": "#1a3a5c",
 }
 DEFAULT_COLOR = "#333333"
+
+# ======================================================================
+# org 判定（平日→NAR, 土日→JRA）
+# ======================================================================
+
+def get_org(target_date: date) -> str:
+    """平日（月〜金）は NAR、土日は JRA を返す。"""
+    return "nar" if target_date.weekday() < 5 else "jra"
+
 
 # ======================================================================
 # ロガー初期化
@@ -101,8 +150,25 @@ def _prob_quinella(probs: list[float], i: int, j: int) -> float:
     return _harville(probs, [i, j]) + _harville(probs, [j, i])
 
 
-def _est_odds(prob: float, bet_type: str) -> float:
-    take = JRA_TAKE.get(bet_type, 0.225)
+def _prob_trio(probs: list[float], i: int, j: int, k: int) -> float:
+    """3連複確率（i,j,k が任意順で1〜3着）"""
+    return sum(_harville(probs, list(o)) for o in _perm([i, j, k]))
+
+
+def _prob_sanrentan(probs: list[float], i: int, j: int, k: int) -> float:
+    """3連単確率（i→j→k の順）"""
+    return _harville(probs, [i, j, k])
+
+
+def _synth_odds(odds_list: list[float]) -> float:
+    """合成オッズ（全点的中でのトータル期待値）"""
+    denom = sum(1.0 / max(o, 1e-9) for o in odds_list)
+    return 1.0 / denom if denom > 0 else 0.0
+
+
+def _est_odds(prob: float, bet_type: str, org: str = "jra") -> float:
+    take_table = NAR_TAKE if org == "nar" else JRA_TAKE
+    take = take_table.get(bet_type, 0.225)
     return (1.0 - take) / max(prob, 0.001)
 
 
@@ -131,6 +197,74 @@ def load_history() -> pd.DataFrame:
 
 
 # ======================================================================
+# 予測ログ保存（docs/predictions_log.csv）
+# ======================================================================
+
+PREDICTIONS_LOG = ROOT / "docs" / "predictions_log.csv"
+PREDICTIONS_LOG_COLS = [
+    "date", "race_id", "race_name", "honmei_num", "honmei_name",
+    "honmei_prob", "taikou_prob", "gap", "mark", "is_buy",
+    "tansho_hit", "tansho_ret",
+    "umatan_str", "umatan_hit", "umatan_ret",
+]
+
+
+def _save_prediction_log(
+    target_date: date,
+    venue_results: dict[str, list[dict | None]],
+) -> None:
+    """
+    予測結果を docs/predictions_log.csv に追記する。
+    hit / payout は未確定（週次バッチで更新）のため空欄で保存。
+    当日分が既に存在する場合は上書き（重複排除）。
+    """
+    rows = []
+    for results in venue_results.values():
+        for r in results:
+            if r is None:
+                continue
+            hon = r["honmei_num"]
+            um_str = ",".join(
+                f"{hon}\u2192{p}" for p in r.get("umatan_partners", [])
+            )
+            rows.append({
+                "date":         str(target_date),
+                "race_id":      r["race_id"],
+                "race_name":    r.get("race_name", ""),
+                "honmei_num":   hon,
+                "honmei_name":  r["honmei_name"],
+                "honmei_prob":  r["honmei_prob"],
+                "taikou_prob":  r.get("taikou_prob", ""),
+                "gap":          r.get("gap", ""),
+                "mark":         r.get("mark", "△"),
+                "is_buy":       r["is_buy"],
+                "tansho_hit":   "",
+                "tansho_ret":   "",
+                "umatan_str":   um_str,
+                "umatan_hit":   "",
+                "umatan_ret":   "",
+            })
+
+    if not rows:
+        logger.info("  予測ログ: 対象レースなし（スキップ）")
+        return
+
+    new_df = pd.DataFrame(rows, columns=PREDICTIONS_LOG_COLS)
+
+    if PREDICTIONS_LOG.exists():
+        existing = pd.read_csv(PREDICTIONS_LOG, dtype=str)
+        # 当日分を削除して新データで上書き
+        existing = existing[existing["date"] != str(target_date)]
+        combined = pd.concat([existing, new_df], ignore_index=True)
+    else:
+        combined = new_df
+
+    PREDICTIONS_LOG.parent.mkdir(parents=True, exist_ok=True)
+    combined.to_csv(PREDICTIONS_LOG, index=False)
+    logger.info(f"  予測ログ保存: {PREDICTIONS_LOG} ({len(rows)} 件追記)")
+
+
+# ======================================================================
 # 1レース予測・買い目生成
 # ======================================================================
 
@@ -138,7 +272,7 @@ def predict_and_bet(
     race_info: RaceInfo,
     fe: FeatureEngineer,
     trainer: ModelTrainer,
-    org: str = "jra",        # odds_notify.py との互換性用（3/14モデルでは未使用）
+    org: str = "jra",
 ) -> dict | None:
     """
     RaceInfo を受け取り、予測と買い目を生成する。
@@ -176,14 +310,23 @@ def predict_and_bet(
         "age":            e.age,
         "weight_carried": e.weight_carried,
         "jockey_id":      e.jockey_id,
+        "trainer_name":   e.trainer_name,
         "father":         e.father_name,
         "mother_father":  e.mother_father_name,
+        "odds":           e.odds,          # 改善⑥: HHI 計算用
     } for e in entries])
 
     # --- 特徴量生成 ---
     from src.scraper.weather import GROUND_CONDITION_MAP, WEATHER_MAP
     gc_code = GROUND_CONDITION_MAP.get(race_info.ground_condition, -1)
     wx_code = WEATHER_MAP.get(race_info.weather, -1)
+
+    # 改善④⑤: レースクラスコード・会場コード
+    race_class_code = FeatureEngineer._race_name_to_class_code(race_info.race_name or "")
+    try:
+        venue_code = int(race_info.race_id[4:6])
+    except Exception:
+        venue_code = -1
 
     try:
         feat_df = fe.build_entry_features(
@@ -192,17 +335,22 @@ def predict_and_bet(
             distance=race_info.distance,
             ground_condition_code=gc_code,
             weather_code=wx_code,
+            race_class_code=race_class_code,
+            venue_code=venue_code,
         )
     except Exception as e:
         logger.warning(f"特徴量生成失敗 {race_info.race_id}: {e}")
         return None
 
-    X = feat_df[FeatureEngineer.FEATURE_COLUMNS].fillna(0)
+    X = (feat_df[FeatureEngineer.FEATURE_COLUMNS]
+         .apply(pd.to_numeric, errors="coerce")
+         .fillna(0))
     # num_threads=1: macOS で LightGBM マルチスレッドが SIGSEGV を起こすため単スレッド化
     win_probs = trainer.model.predict(X, num_threads=1)
     if trainer.place_model is not None:
         place_probs = trainer.place_model.predict(X, num_threads=1)
-        probs = 0.7 * win_probs + 0.3 * place_probs
+        win_blend = NAR_WIN_BLEND if org == "nar" else 0.7
+        probs = win_blend * win_probs + (1.0 - win_blend) * place_probs
     else:
         probs = win_probs
 
@@ -210,61 +358,110 @@ def predict_and_bet(
     pred_df["win_prob"] = probs
     pred_df = pred_df.sort_values("win_prob", ascending=False).reset_index(drop=True)
 
-    # --- レース絞り込み ---
+    # --- マーク判定 ---
     honmei_prob = float(pred_df.iloc[0]["win_prob"])
     taikou_prob = float(pred_df.iloc[1]["win_prob"]) if len(pred_df) > 1 else 0.0
-    gap         = honmei_prob - taikou_prob
-    skip_prob   = honmei_prob < MIN_HONMEI_PROB
-    skip_gap    = gap < MIN_CONFIDENCE_GAP
-    is_skip     = skip_prob or skip_gap
+    gap = honmei_prob - taikou_prob
+    n_entries = len(entries)
 
-    if is_skip:
+    # 改善②: 出走頭数に応じた動的閾値（多頭数は確率が薄まるため厳格化）
+    base_threshold = NAR_MIN_HONMEI_PROB if org == "nar" else MIN_HONMEI_PROB
+    entries_adj = min(
+        max(0, n_entries - ENTRIES_THRESHOLD_BASE) * ENTRIES_THRESHOLD_ADJ,
+        ENTRIES_THRESHOLD_CAP,
+    )
+    prob_threshold = base_threshold + entries_adj
+
+    # 改善③: 新馬・未勝利戦は閾値を追加ブースト
+    is_maiden = any(k in str(race_info.race_name) for k in MAIDEN_KEYWORDS)
+    if is_maiden:
+        prob_threshold += MAIDEN_PROB_BOOST
+
+    gap_ok = gap >= MIN_CONFIDENCE_GAP
+
+    # 改善⑨: EV フィルタ — feat_df["odds"] は build_entry_features で付加済み
+    honmei_id_str = str(pred_df.iloc[0]["horse_id"])
+    odds_col_map  = feat_df.set_index("horse_id")["odds"] if "odds" in feat_df.columns else {}
+    _raw_odds = odds_col_map.get(honmei_id_str)
+    honmei_odds_pre = float(_raw_odds) if _raw_odds is not None else float("nan")
+    honmei_ev = (honmei_prob * honmei_odds_pre
+                 if _raw_odds is not None and not np.isnan(honmei_odds_pre) else float("nan"))
+    # オッズ未取得時（nan）は EV フィルタをスキップして確率フィルタのみ適用
+    ev_ok = (np.isnan(honmei_ev) or honmei_ev >= EV_THRESHOLD)
+
+    if not gap_ok or honmei_prob < prob_threshold or not ev_ok:
         mark = "△"
-    elif honmei_prob >= 0.25:
+    elif honmei_prob >= MARK_STRONG_PROB:
         mark = "◎"
     else:
         mark = "○"
+
+    is_skip = (mark == "△")
+
+    logger.info(
+        f"  probs: {mark}{pred_df.iloc[0]['horse_name']}={honmei_prob:.4f}"
+        f"  対抗={taikou_prob:.4f}  差={gap:.4f}"
+        f"  EV={honmei_ev:.2f}({'OK' if ev_ok else 'NG'})"
+    )
 
     honmei_row = pred_df.iloc[0]
     honmei_num  = str(int(honmei_row["horse_number"]))
     honmei_name = str(honmei_row["horse_name"])
 
-    logger.info(
-        f"  probs: {mark}{honmei_name}={honmei_prob:.4f}"
-        f"  対抗={taikou_prob:.4f}  差={gap:.4f}"
-    )
-
     # レース番号（race_id 末尾2桁）
     race_num_str = f"{int(race_info.race_id[-2:])}R"
 
     result = {
-        "race_id":        race_info.race_id,
-        "race_name":      race_info.race_name,
-        "race_num":       race_num_str,
-        "is_buy":         False,
-        "mark":           mark,
-        "honmei_num":     honmei_num,
-        "honmei_name":    honmei_name,
-        "honmei_prob":    round(honmei_prob, 3),
-        "taikou_prob":    round(taikou_prob, 3),
-        "gap":            round(gap, 3),
-        "n_entries":      len(entries),
-        # △通知用スキップ理由フラグ
-        "skip_prob":      skip_prob,
-        "skip_gap":       skip_gap,
-        "skip_ev":        False,    # 3/14モデルはEVフィルタなし
-        "prob_threshold": MIN_HONMEI_PROB,
-        "baren_partners": [],
+        "race_id":            race_info.race_id,
+        "race_name":          race_info.race_name,
+        "race_num":           race_num_str,
+        "is_buy":             not is_skip,
+        "mark":               mark,
+        "honmei_num":         honmei_num,
+        "honmei_name":        honmei_name,
+        "honmei_prob":        round(honmei_prob, 3),
+        "taikou_prob":        round(taikou_prob, 3),
+        "gap":                round(gap, 3),
+        "n_entries":          n_entries,
+        "is_maiden":          is_maiden,
+        # △通知用: スキップ理由フラグ
+        "skip_prob":          honmei_prob < prob_threshold,
+        "skip_gap":           not gap_ok,
+        "skip_ev":            not ev_ok,
+        "prob_threshold":     round(prob_threshold, 3),
+        "baren_partners":     [],
+        "umatan_partners":    [],
+        "sanrenfuku_combos":  [],
+        "sanrentan_combos":   [],
     }
 
     if is_skip:
         return result
 
-    # --- EV 相手選び（馬連用） ---
+    # --- 共通: オッズマップ・市場確率 ---
     odds_map = {e.horse_id: e.odds for e in entries if e.odds}
-    candidates = pred_df[pred_df["horse_id"] != honmei_row["horse_id"]].head(EV_PARTNER_TOP_N)
+    all_ids      = pred_df["horse_id"].tolist()
+    all_odds_raw = [_parse_odds(odds_map.get(hid, float("nan"))) for hid in all_ids]
+    valid_pairs  = [(hid, o) for hid, o in zip(all_ids, all_odds_raw)
+                    if not np.isnan(o) and o > 1.0]
+    mkt_probs: list[float] = []
+    valid_ids: list[str]   = []
+    if valid_pairs:
+        vids, vodds = zip(*valid_pairs)
+        valid_ids   = list(vids)
+        mkt_probs   = _market_probs(list(vodds)).tolist()
+
+    def vidx(horse_id: str) -> int | None:
+        return valid_ids.index(horse_id) if horse_id in valid_ids else None
+
+    hi = vidx(honmei_row["horse_id"])
+
+    # --- モデル上位 EV_PARTNER_TOP_N 頭（◎除く）---
+    partner_rows = pred_df[pred_df["horse_id"] != honmei_row["horse_id"]].head(EV_PARTNER_TOP_N)
+
+    # --- 馬連: EV スコア上位3頭・トリガミ除外 ---
     scored = []
-    for _, row in candidates.iterrows():
+    for _, row in partner_rows.iterrows():
         hid  = str(row["horse_id"])
         prob = float(row["win_prob"])
         odds = _parse_odds(odds_map.get(hid, 5.0))
@@ -272,35 +469,116 @@ def predict_and_bet(
             odds = 5.0
         scored.append((hid, prob * odds, str(int(row["horse_number"]))))
     scored.sort(key=lambda x: x[1], reverse=True)
-    ev_top = scored[:MAX_BAREN_TICKETS]
 
-    # --- 馬連 トリガミフィルタ ---
-    all_ids  = pred_df["horse_id"].tolist()
-    all_odds_raw = [_parse_odds(odds_map.get(hid, float("nan"))) for hid in all_ids]
-    valid_pairs = [(hid, o) for hid, o in zip(all_ids, all_odds_raw)
-                   if not np.isnan(o) and o > 1.0]
-    mkt_probs: list[float] = []
-    valid_ids: list[str]   = []
-    if valid_pairs:
-        vids, vodds = zip(*valid_pairs)
-        valid_ids  = list(vids)
-        mkt_probs  = _market_probs(list(vodds)).tolist()
-
-    def vidx(horse_id: str) -> int | None:
-        return valid_ids.index(horse_id) if horse_id in valid_ids else None
-
-    hi = vidx(honmei_row["horse_id"])
     baren_nums: list[str] = []
-    for hid, _ev, num in ev_top:
+    for hid, _ev, num in scored[:MAX_BAREN_TICKETS]:
         vi = vidx(hid)
         if hi is not None and vi is not None and mkt_probs:
-            e_odds = _est_odds(_prob_quinella(mkt_probs, hi, vi), "馬連")
+            e_odds = _est_odds(_prob_quinella(mkt_probs, hi, vi), "馬連", org=org)
             if e_odds < TORIKAMI_THRESHOLD:
                 continue
         baren_nums.append(num)
 
-    result["is_buy"]         = True
-    result["baren_partners"] = baren_nums
+    # --- 馬単: ◎1着固定 × 上位EV頭 → Harville降順 最大3点 ---
+    um_all: list[tuple[str, float]] = []
+    for hid, _ev, num in scored:
+        vi = vidx(hid)
+        if hi is not None and vi is not None and mkt_probs:
+            e_od = _est_odds(_harville(mkt_probs, [hi, vi]), "馬単", org=org)
+            if e_od < TORIKAMI_THRESHOLD:
+                continue
+        else:
+            e_od = 999.0
+        um_all.append((num, e_od))
+
+    um_all.sort(key=lambda x: -x[1])
+    um_sel = um_all[:MAX_UMATAN_TICKETS]
+    um_est = [e for _, e in um_sel]
+    umatan_partners = (
+        [num for num, _ in um_sel]
+        if (not um_est or _synth_odds(um_est) >= 1.0)
+        else []
+    )
+
+    # --- 3連複 / 3連単: NAR は未検証のため除外 ---
+    # pool: (馬番str, valid_ids_index_or_None)
+    # vi=None の馬（オッズ未取得）でもプールに加え、Harville はモデル確率で代替する
+    pool: list[tuple[str, int | None]] = []
+    sanrenfuku_combos: list[tuple[str, str]] = []
+    sanrentan_combos:  list[tuple[str, str]] = []
+
+    if org != "nar":
+        for _, row in partner_rows.iterrows():
+            vi = vidx(str(row["horse_id"]))
+            pool.append((str(int(row["horse_number"])), vi))
+
+        # オッズ未取得時はモデル確率（正規化済み）でHarvilleを代替
+        _probs_raw = pred_df["win_prob"].tolist()
+        _probs_sum = sum(_probs_raw)
+        _model_probs = [p / _probs_sum for p in _probs_raw] if _probs_sum > 0 else _probs_raw
+        # pred_df index→確率 (0=本命, 1〜=相手順)
+        _partner_pred_idxs = {
+            num: i + 1
+            for i, (num, _vi) in enumerate(pool)
+        }
+
+        # 3連複: EV = モデル確率(trio) × 推定市場配当  ← 馬連と同じモデルEVアプローチ
+        # (num_a, num_b, ev_score, e_od)
+        sf_all: list[tuple[str, str, float, float]] = []
+        for (num_a, vi_a), (num_b, vi_b) in _comb(pool, 2):
+            pa      = _partner_pred_idxs.get(num_a, 1)
+            pb      = _partner_pred_idxs.get(num_b, 2)
+            model_p = _prob_trio(_model_probs, 0, pa, pb)
+
+            if hi is not None and vi_a is not None and vi_b is not None and mkt_probs:
+                mkt_p = _prob_trio(mkt_probs, hi, vi_a, vi_b)
+                e_od  = _est_odds(mkt_p, "3連複", org=org)
+            else:
+                e_od = _est_odds(model_p, "3連複", org=org)
+
+            ev = model_p * e_od   # EV: モデル期待確率 × 推定配当
+            sf_all.append((num_a, num_b, ev, e_od))
+
+        sf_all.sort(key=lambda x: -x[2])   # EV降順
+        sf_sel = sf_all[:MAX_SANRENFUKU_TICKETS]
+        sf_est = [od for _, _, _, od in sf_sel]
+        sanrenfuku_combos = (
+            [(a, b) for a, b, _, _ in sf_sel]
+            if (not sf_est or _synth_odds(sf_est) >= 1.0)
+            else []
+        )
+
+        # 3連単: EV = モデル確率(◎→A→B) × 推定市場配当
+        # (num_2, num_3, ev_score, e_od)
+        st_all: list[tuple[str, str, float, float]] = []
+        for (num_2, vi_2), (num_3, vi_3) in _perm(pool, 2):
+            p2      = _partner_pred_idxs.get(num_2, 1)
+            p3      = _partner_pred_idxs.get(num_3, 2)
+            model_p = _prob_sanrentan(_model_probs, 0, p2, p3)
+
+            if hi is not None and vi_2 is not None and vi_3 is not None and mkt_probs:
+                mkt_p = _prob_sanrentan(mkt_probs, hi, vi_2, vi_3)
+                e_od  = _est_odds(mkt_p, "3連単", org=org)
+            else:
+                e_od = _est_odds(model_p, "3連単", org=org)
+
+            ev = model_p * e_od
+            st_all.append((num_2, num_3, ev, e_od))
+
+        st_all.sort(key=lambda x: -x[2])   # EV降順
+        st_sel = st_all[:MAX_SANRENTAN_TICKETS]
+        st_est = [od for _, _, _, od in st_sel]
+        sanrentan_combos = (
+            [(n2, n3) for n2, n3, _, _ in st_sel]
+            if (not st_est or _synth_odds(st_est) >= 1.0)
+            else []
+        )
+
+    result["is_buy"]            = True
+    result["baren_partners"]    = baren_nums
+    result["umatan_partners"]   = umatan_partners
+    result["sanrenfuku_combos"] = sanrenfuku_combos
+    result["sanrentan_combos"]  = sanrentan_combos
     return result
 
 
@@ -310,68 +588,131 @@ def predict_and_bet(
 
 def _race_row_component(race_result: dict | None, race_num: int) -> list[dict]:
     """1レース分の行コンポーネント（separator + box）を返す"""
-    label = f"{race_num:>2}R"  # 右詰めで幅を揃える（1R→" 1R"）
+    label = f"{race_num:>2}R"
 
-    if race_result is None or not race_result.get("is_buy"):
-        # 見送りレース
+    # データ取得失敗レース
+    if race_result is None:
         body_content = {
             "type": "box",
             "layout": "horizontal",
             "paddingStart": "14px", "paddingEnd": "14px",
             "paddingTop": "7px", "paddingBottom": "7px",
             "contents": [
-                {
-                    "type": "text", "text": label,
-                    "size": "sm", "color": "#cccccc",
-                    "flex": 0,
-                },
-                {
-                    "type": "text", "text": "— 見送り",
-                    "size": "sm", "color": "#cccccc",
-                    "flex": 1, "margin": "md",
-                },
+                {"type": "text", "text": label,
+                 "size": "sm", "color": "#cccccc", "flex": 0},
+                {"type": "text", "text": "— データなし",
+                 "size": "sm", "color": "#cccccc", "flex": 1, "margin": "md"},
             ],
         }
-    else:
-        # 購入レース
-        hon_num  = race_result["honmei_num"]
-        hon_name = race_result["honmei_name"]
-        partners = race_result["baren_partners"]
-        baren_str = (
-            f"馬連: {hon_num} - {', '.join(partners)}"
-            if partners else "馬連: なし（単複のみ）"
-        )
+        return [{"type": "separator"}, body_content]
+
+    mark     = race_result.get("mark", "△")
+    hon_num  = race_result["honmei_num"]
+    hon_name = race_result["honmei_name"]
+    prob     = race_result["honmei_prob"]
+    t_prob   = race_result.get("taikou_prob", 0.0)
+    gap      = race_result.get("gap", 0.0)
+
+    # 確率サマリー行（全レース共通）
+    prob_str = f"{prob:.1%}  差+{gap:.1%}  対抗{t_prob:.1%}"
+
+    if mark == "◎":
+        label_color  = "#1a5533"
+        label_weight = "bold"
+    elif mark == "○":
+        label_color  = "#7a5500"
+        label_weight = "bold"
+    else:  # △
+        label_color  = "#999999"
+        label_weight = "regular"
+
+    # ── △（見送り）: 馬名 + 確率のみ ──────────────────────────
+    if mark == "△":
         body_content = {
             "type": "box",
             "layout": "horizontal",
             "paddingStart": "14px", "paddingEnd": "14px",
-            "paddingTop": "9px", "paddingBottom": "9px",
+            "paddingTop": "7px", "paddingBottom": "7px",
             "contents": [
+                {"type": "text", "text": label,
+                 "size": "sm", "color": label_color, "flex": 0},
                 {
-                    "type": "text", "text": label,
-                    "size": "sm", "weight": "bold", "color": "#1a5533",
-                    "flex": 0,
-                },
-                {
-                    "type": "box",
-                    "layout": "vertical",
+                    "type": "box", "layout": "vertical",
                     "flex": 1, "margin": "md",
                     "contents": [
-                        {
-                            "type": "text",
-                            "text": f"◎{hon_num} {hon_name}（単・複）",
-                            "size": "sm", "weight": "bold",
-                            "color": "#1a5533", "wrap": True,
-                        },
-                        {
-                            "type": "text", "text": baren_str,
-                            "size": "xs", "color": "#555555",
-                            "margin": "xs",
-                        },
+                        {"type": "text",
+                         "text": f"△ {hon_num} {hon_name}",
+                         "size": "sm", "color": "#999999", "wrap": True},
+                        {"type": "text", "text": prob_str,
+                         "size": "xs", "color": "#bbbbbb", "margin": "xs", "wrap": True},
                     ],
                 },
             ],
         }
+        return [{"type": "separator"}, body_content]
+
+    # ── ◎ / ○: 馬券情報あり ──────────────────────────────────
+    partners    = race_result.get("baren_partners", [])
+    um_partners = race_result.get("umatan_partners", [])
+    sf_combos   = race_result.get("sanrenfuku_combos", [])
+    st_combos   = race_result.get("sanrentan_combos", [])
+
+    baren_str = (
+        f"馬連: {hon_num}-{' / '.join(partners)}"
+        if partners else "馬連: なし"
+    )
+    umatan_str = (
+        "馬単: " + " / ".join(f"{hon_num}→{p}" for p in um_partners)
+        if um_partners else "馬単: なし"
+    )
+    sf_str = (
+        "3連複: " + " / ".join(f"{hon_num}-{a}-{b}" for a, b in sf_combos)
+        if sf_combos else "3連複: なし"
+    )
+    st_str = (
+        "3連単: " + " / ".join(f"{hon_num}→{n2}→{n3}" for n2, n3 in st_combos)
+        if st_combos else "3連単: なし"
+    )
+
+    ticket_color  = "#555555"
+    umatan_color  = "#7a5500"
+    sf_color      = "#4a4a8a"
+    st_color      = "#7a3a3a"
+
+    detail_items: list[dict] = [
+        {"type": "text",
+         "text": f"{mark}{hon_num} {hon_name}（単・複）",
+         "size": "sm", "weight": "bold", "color": label_color, "wrap": True},
+        {"type": "text", "text": prob_str,
+         "size": "xs", "color": "#888888", "margin": "xs", "wrap": True},
+        {"type": "text", "text": baren_str,
+         "size": "xs", "color": ticket_color, "margin": "xs", "wrap": True},
+        {"type": "text", "text": umatan_str,
+         "size": "xs", "color": umatan_color, "margin": "xs", "wrap": True},
+    ]
+    if sf_combos:
+        detail_items.append(
+            {"type": "text", "text": sf_str,
+             "size": "xs", "color": sf_color, "margin": "xs", "wrap": True}
+        )
+    if st_combos:
+        detail_items.append(
+            {"type": "text", "text": st_str,
+             "size": "xs", "color": st_color, "margin": "xs", "wrap": True}
+        )
+
+    body_content = {
+        "type": "box",
+        "layout": "horizontal",
+        "paddingStart": "14px", "paddingEnd": "14px",
+        "paddingTop": "9px", "paddingBottom": "9px",
+        "contents": [
+            {"type": "text", "text": label,
+             "size": "sm", "weight": label_weight, "color": label_color, "flex": 0},
+            {"type": "box", "layout": "vertical",
+             "flex": 1, "margin": "md", "contents": detail_items},
+        ],
+    }
 
     return [{"type": "separator"}, body_content]
 
@@ -394,8 +735,10 @@ def _build_venue_bubble(
                 continue
             by_num[n] = r
 
-    buy_count = sum(1 for r in by_num.values() if r and r.get("is_buy"))
-    total_count = len(by_num)
+    strong_count = sum(1 for r in by_num.values() if r and r.get("mark") == "◎")
+    ok_count     = sum(1 for r in by_num.values() if r and r.get("mark") == "○")
+    buy_count    = strong_count + ok_count
+    total_count  = len(by_num)
 
     # レース行を生成（1R〜12R）
     race_row_components: list[dict] = []
@@ -447,7 +790,7 @@ def _build_venue_bubble(
             "contents": [
                 {
                     "type": "text",
-                    "text": f"参加 {buy_count}R / {total_count}R中",
+                    "text": f"◎{strong_count}R  ○{ok_count}R  △{total_count - buy_count}R  計{total_count}R",
                     "size": "xs",
                     "color": "#888888",
                     "align": "center",
@@ -544,45 +887,69 @@ def main() -> None:
         action="store_true",
         help="LINE 送信をスキップしてローカルに JSON を出力",
     )
+    parser.add_argument(
+        "--org",
+        choices=["jra", "nar", "auto"],
+        default="auto",
+        help="競馬主催者 (auto=平日NAR/土日JRA, default: auto)",
+    )
     args = parser.parse_args()
     target_date = date.fromisoformat(args.date)
 
+    org = get_org(target_date) if args.org == "auto" else args.org
+
     t0 = time.time()
     logger.info("=" * 60)
-    logger.info(f"daily_batch 開始: {target_date}")
+    logger.info(f"daily_batch 開始: {target_date}  [org={org.upper()}]")
     logger.info("=" * 60)
 
     # ── 1. モデル・履歴読み込み ──────────────────────────────────
     logger.info("[1/5] モデル・FeatureEngineer 読み込み")
-    trainer = ModelTrainer.load(settings.model_path)
+    model_path = settings.nar_model_path if org == "nar" else settings.model_path
+    stats_path  = settings.nar_stats_path  if org == "nar" else settings.stats_path
+
+    # NAR モデルが存在しない場合は JRA モデルで代替（初期運用時）
+    if org == "nar" and not model_path.exists():
+        logger.warning(f"  NAR モデルが見つかりません ({model_path})。JRA モデルで代替します。")
+        model_path = settings.model_path
+        stats_path  = settings.stats_path
+
+    trainer = ModelTrainer.load(model_path, org=org)
 
     # ── 2. FeatureEngineer 構築 ──────────────────────────────────
-    # feature_stats.pkl（リポジトリに含まれる）から推論用統計を読み込む。
-    # GitHub Actions のクリーン環境では data/raw/*.csv が存在しないため
-    # FeatureEngineer(history_df) は使用しない。
     logger.info("[2/5] FeatureEngineer 構築（feature_stats.pkl から）")
-    fe = FeatureEngineer.from_stats(settings.stats_path)
+    fe = FeatureEngineer.from_stats(stats_path)
+
+    # NAR: 直近成績 CSV が存在すれば history に読み込み recent_avg_pos を有効化。
+    # NAR モデルでは recent_avg_pos が最重要特徴量（gain 30.6%）のため必須。
+    # nar_results.csv はリポジトリに含まれ、collect_weekly.yml が週次更新する。
+    if org == "nar":
+        nar_hist_path = ROOT / "data" / "raw" / "nar_results.csv"
+        if nar_hist_path.exists():
+            nar_hist = pd.read_csv(nar_hist_path, dtype=str)
+            fe.history = fe._preprocess_history(nar_hist)
+            logger.info(f"  NAR 直近成績ロード: {len(nar_hist):,} rows → recent_avg_pos 有効")
+        else:
+            logger.warning("  nar_results.csv が見つかりません。recent_avg_pos = NaN になります。")
+
     logger.info("  FeatureEngineer 準備完了")
 
     # ── 3. 当日レーススケジュール取得 ────────────────────────────
     logger.info("[3/5] 当日レーススケジュール取得")
-    scraper = NetkeibaScraper()
+    scraper = NARScraper() if org == "nar" else NetkeibaScraper()
     try:
         schedule = scraper.fetch_race_schedule_by_date(target_date)
     except Exception as e:
         logger.error(f"スケジュール取得失敗: {e}")
         schedule = {}
 
-    # 対象会場のみ絞り込み（settings.target_jyo_codes）
-    # ※ fetch_race_schedule_by_date が venue_name を返すため、
-    #    設定の jyo_code を venue_name に変換して照合する
-    JYO_TO_NAME = {
-        "01": "札幌", "02": "函館", "03": "福島", "04": "新潟",
-        "05": "東京", "06": "中山", "07": "中京", "08": "京都",
-        "09": "阪神", "10": "小倉",
-    }
-    target_venues = {JYO_TO_NAME[c] for c in settings.target_jyo_code_list
-                     if c in JYO_TO_NAME}
+    # 対象会場のみ絞り込み（settings.*_target_jyo_codes）
+    jyo_to_name = scraper.VENUE_CODE_TO_NAME
+    target_code_list = (
+        settings.nar_target_jyo_code_list if org == "nar"
+        else settings.target_jyo_code_list
+    )
+    target_venues = {jyo_to_name[c] for c in target_code_list if c in jyo_to_name}
     schedule = {k: v for k, v in schedule.items() if k in target_venues}
     if not schedule:
         logger.warning(f"  対象会場なし（target_venues={target_venues}）")
@@ -605,21 +972,28 @@ def main() -> None:
                 venue_results[venue].append(None)
                 continue
 
-            result = predict_and_bet(race_info, fe, trainer)
+            result = predict_and_bet(race_info, fe, trainer, org=org)
             venue_results[venue].append(result)
 
             if result and result["is_buy"]:
-                partners_str = ", ".join(result["baren_partners"])
+                hon = result['honmei_num']
+                baren_str = "-".join([hon] + result["baren_partners"]) or "なし"
+                sf_str = " / ".join(f"{hon}-{a}-{b}" for a, b in result["sanrenfuku_combos"]) or "なし"
+                st_str = " / ".join(f"{hon}→{n2}→{n3}" for n2, n3 in result["sanrentan_combos"]) or "なし"
                 logger.info(
-                    f"    {result['race_num']:>3}  ◎{result['honmei_num']} "
-                    f"{result['honmei_name']} "
-                    f"(prob={result['honmei_prob']:.2%})  "
-                    f"馬連: {result['honmei_num']}-{partners_str}"
+                    f"    {result['race_num']:>3}  ◎{hon} {result['honmei_name']}"
+                    f"  (prob={result['honmei_prob']:.2%})"
                 )
+                logger.info(f"          馬連: {baren_str}")
+                logger.info(f"          3連複: {sf_str}")
+                logger.info(f"          3連単: {st_str}")
             elif result:
                 logger.info(f"    {result['race_num']:>3}  見送り")
 
     scraper.close()
+
+    # ── 4.5 予測ログ保存（結果は後で週次バッチが更新）────────────
+    _save_prediction_log(target_date, venue_results)
 
     # ── 5. Flex Message 構築・送信 ──────────────────────────────
     logger.info("[5/5] Flex Message 構築・送信")

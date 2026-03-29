@@ -1,203 +1,311 @@
 {
   "win_model": {
-    "num_trees": 175,
+    "num_trees": 220,
     "importance": [
       {
-        "feature": "recent_avg_pos",
-        "gain": 36124,
-        "gain_pct": 22.74,
-        "split": 2321
+        "feature": "odds_log",
+        "gain": 224401,
+        "gain_pct": 53.4,
+        "split": 850
+      },
+      {
+        "feature": "popularity_rank_norm",
+        "gain": 66684,
+        "gain_pct": 15.87,
+        "split": 503
+      },
+      {
+        "feature": "market_hhi",
+        "gain": 21685,
+        "gain_pct": 5.16,
+        "split": 2902
       },
       {
         "feature": "jockey_place_rate",
-        "gain": 24884,
-        "gain_pct": 15.66,
-        "split": 3061
-      },
-      {
-        "feature": "recent_avg_last3f",
-        "gain": 20027,
-        "gain_pct": 12.61,
-        "split": 3379
+        "gain": 10582,
+        "gain_pct": 2.52,
+        "split": 1998
       },
       {
         "feature": "jockey_runs",
-        "gain": 19547,
-        "gain_pct": 12.3,
-        "split": 3334
+        "gain": 10260,
+        "gain_pct": 2.44,
+        "split": 2412
+      },
+      {
+        "feature": "trainer_place_rate",
+        "gain": 10070,
+        "gain_pct": 2.4,
+        "split": 2355
+      },
+      {
+        "feature": "trainer_win_rate",
+        "gain": 9821,
+        "gain_pct": 2.34,
+        "split": 2158
+      },
+      {
+        "feature": "recent_avg_pos",
+        "gain": 8607,
+        "gain_pct": 2.05,
+        "split": 1331
       },
       {
         "feature": "jockey_win_rate",
-        "gain": 17656,
-        "gain_pct": 11.11,
-        "split": 2857
+        "gain": 8395,
+        "gain_pct": 2.0,
+        "split": 1765
+      },
+      {
+        "feature": "recent_avg_last3f",
+        "gain": 8302,
+        "gain_pct": 1.98,
+        "split": 1814
+      },
+      {
+        "feature": "prev_last3f_rank_norm",
+        "gain": 7087,
+        "gain_pct": 1.69,
+        "split": 1496
+      },
+      {
+        "feature": "recent_top3_rate",
+        "gain": 5357,
+        "gain_pct": 1.27,
+        "split": 584
+      },
+      {
+        "feature": "n_entries",
+        "gain": 4771,
+        "gain_pct": 1.14,
+        "split": 826
       },
       {
         "feature": "horse_number",
-        "gain": 8864,
-        "gain_pct": 5.58,
-        "split": 1612
+        "gain": 4448,
+        "gain_pct": 1.06,
+        "split": 989
+      },
+      {
+        "feature": "venue_ground_code",
+        "gain": 3735,
+        "gain_pct": 0.89,
+        "split": 869
       },
       {
         "feature": "distance",
-        "gain": 7840,
-        "gain_pct": 4.94,
-        "split": 1367
+        "gain": 2889,
+        "gain_pct": 0.69,
+        "split": 713
       },
       {
         "feature": "weight_carried",
-        "gain": 6291,
-        "gain_pct": 3.96,
-        "split": 1106
+        "gain": 2859,
+        "gain_pct": 0.68,
+        "split": 690
       },
       {
         "feature": "frame_number",
-        "gain": 5836,
-        "gain_pct": 3.67,
-        "split": 1018
+        "gain": 2246,
+        "gain_pct": 0.53,
+        "split": 489
+      },
+      {
+        "feature": "prev_margin",
+        "gain": 2238,
+        "gain_pct": 0.53,
+        "split": 548
       },
       {
         "feature": "age",
-        "gain": 5730,
-        "gain_pct": 3.61,
-        "split": 858
+        "gain": 1611,
+        "gain_pct": 0.38,
+        "split": 336
+      },
+      {
+        "feature": "race_class_code",
+        "gain": 1452,
+        "gain_pct": 0.35,
+        "split": 318
+      },
+      {
+        "feature": "venue_code",
+        "gain": 1194,
+        "gain_pct": 0.28,
+        "split": 286
       },
       {
         "feature": "weather_code",
-        "gain": 2533,
-        "gain_pct": 1.59,
-        "split": 473
+        "gain": 746,
+        "gain_pct": 0.18,
+        "split": 179
       },
       {
         "feature": "ground_condition_code",
-        "gain": 2142,
-        "gain_pct": 1.35,
-        "split": 395
+        "gain": 631,
+        "gain_pct": 0.15,
+        "split": 164
       },
       {
         "feature": "course_type_code",
-        "gain": 771,
-        "gain_pct": 0.49,
-        "split": 145
-      },
-      {
-        "feature": "distance_bin_code",
-        "gain": 617,
-        "gain_pct": 0.39,
-        "split": 124
-      },
-      {
-        "feature": "sire_win_rate",
-        "gain": 0,
-        "gain_pct": 0.0,
-        "split": 0
-      },
-      {
-        "feature": "bms_win_rate",
-        "gain": 0,
-        "gain_pct": 0.0,
-        "split": 0
+        "gain": 147,
+        "gain_pct": 0.03,
+        "split": 31
       }
     ]
   },
   "place_model": {
-    "num_trees": 245,
+    "num_trees": 280,
     "importance": [
       {
+        "feature": "odds_log",
+        "gain": 446327,
+        "gain_pct": 55.43,
+        "split": 1227
+      },
+      {
+        "feature": "popularity_rank_norm",
+        "gain": 141404,
+        "gain_pct": 17.56,
+        "split": 877
+      },
+      {
+        "feature": "market_hhi",
+        "gain": 35461,
+        "gain_pct": 4.4,
+        "split": 3480
+      },
+      {
         "feature": "recent_avg_pos",
-        "gain": 77091,
-        "gain_pct": 30.86,
-        "split": 3048
+        "gain": 18640,
+        "gain_pct": 2.32,
+        "split": 2022
       },
       {
         "feature": "jockey_place_rate",
-        "gain": 36727,
-        "gain_pct": 14.7,
-        "split": 4476
+        "gain": 17778,
+        "gain_pct": 2.21,
+        "split": 2741
       },
       {
-        "feature": "recent_avg_last3f",
-        "gain": 27065,
-        "gain_pct": 10.83,
-        "split": 4824
+        "feature": "n_entries",
+        "gain": 17457,
+        "gain_pct": 2.17,
+        "split": 1465
+      },
+      {
+        "feature": "trainer_place_rate",
+        "gain": 14958,
+        "gain_pct": 1.86,
+        "split": 2770
+      },
+      {
+        "feature": "trainer_win_rate",
+        "gain": 14134,
+        "gain_pct": 1.76,
+        "split": 2666
       },
       {
         "feature": "jockey_runs",
-        "gain": 24788,
-        "gain_pct": 9.92,
-        "split": 4378
+        "gain": 13708,
+        "gain_pct": 1.7,
+        "split": 2741
       },
       {
         "feature": "jockey_win_rate",
-        "gain": 24466,
-        "gain_pct": 9.79,
-        "split": 3886
+        "gain": 12832,
+        "gain_pct": 1.59,
+        "split": 2412
+      },
+      {
+        "feature": "recent_avg_last3f",
+        "gain": 12634,
+        "gain_pct": 1.57,
+        "split": 2383
+      },
+      {
+        "feature": "prev_last3f_rank_norm",
+        "gain": 11479,
+        "gain_pct": 1.43,
+        "split": 1990
+      },
+      {
+        "feature": "recent_top3_rate",
+        "gain": 9283,
+        "gain_pct": 1.15,
+        "split": 798
       },
       {
         "feature": "horse_number",
-        "gain": 12154,
-        "gain_pct": 4.87,
-        "split": 2119
+        "gain": 6207,
+        "gain_pct": 0.77,
+        "split": 1227
+      },
+      {
+        "feature": "venue_ground_code",
+        "gain": 6188,
+        "gain_pct": 0.77,
+        "split": 1268
       },
       {
         "feature": "distance",
-        "gain": 10907,
-        "gain_pct": 4.37,
-        "split": 1973
+        "gain": 4683,
+        "gain_pct": 0.58,
+        "split": 938
+      },
+      {
+        "feature": "race_class_code",
+        "gain": 3891,
+        "gain_pct": 0.48,
+        "split": 620
       },
       {
         "feature": "weight_carried",
-        "gain": 10086,
-        "gain_pct": 4.04,
-        "split": 1688
-      },
-      {
-        "feature": "age",
-        "gain": 9607,
-        "gain_pct": 3.85,
-        "split": 1373
+        "gain": 3731,
+        "gain_pct": 0.46,
+        "split": 762
       },
       {
         "feature": "frame_number",
-        "gain": 8305,
-        "gain_pct": 3.32,
-        "split": 1472
+        "gain": 3367,
+        "gain_pct": 0.42,
+        "split": 657
       },
       {
-        "feature": "weather_code",
-        "gain": 3384,
-        "gain_pct": 1.35,
-        "split": 651
+        "feature": "prev_margin",
+        "gain": 3365,
+        "gain_pct": 0.42,
+        "split": 683
+      },
+      {
+        "feature": "age",
+        "gain": 2322,
+        "gain_pct": 0.29,
+        "split": 416
+      },
+      {
+        "feature": "venue_code",
+        "gain": 2294,
+        "gain_pct": 0.28,
+        "split": 465
       },
       {
         "feature": "ground_condition_code",
-        "gain": 2848,
-        "gain_pct": 1.14,
-        "split": 549
+        "gain": 1257,
+        "gain_pct": 0.16,
+        "split": 250
+      },
+      {
+        "feature": "weather_code",
+        "gain": 1170,
+        "gain_pct": 0.15,
+        "split": 233
       },
       {
         "feature": "course_type_code",
-        "gain": 1433,
-        "gain_pct": 0.57,
-        "split": 256
-      },
-      {
-        "feature": "distance_bin_code",
-        "gain": 954,
-        "gain_pct": 0.38,
-        "split": 177
-      },
-      {
-        "feature": "sire_win_rate",
-        "gain": 0,
-        "gain_pct": 0.0,
-        "split": 0
-      },
-      {
-        "feature": "bms_win_rate",
-        "gain": 0,
-        "gain_pct": 0.0,
-        "split": 0
+        "gain": 572,
+        "gain_pct": 0.07,
+        "split": 88
       }
     ]
   }
