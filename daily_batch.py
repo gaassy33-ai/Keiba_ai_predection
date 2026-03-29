@@ -42,7 +42,6 @@ from src.features.engineer import FeatureEngineer
 from src.model.trainer import ModelTrainer
 from src.scraper.base_scraper import RaceInfo
 from src.scraper.netkeiba_scraper import NetkeibaScraper
-from src.scraper.nar_scraper import NARScraper
 from config.settings import settings
 
 # ======================================================================
@@ -71,43 +70,13 @@ TORIKAMI_THRESHOLD   = 1.05   # トリガミ判定閾値（推定オッズがこ
 # JRA 控除率
 JRA_TAKE = {"馬連": 0.225, "馬単": 0.25, "3連複": 0.225, "3連単": 0.275}
 
-# ── NAR 専用パラメータ ──────────────────────────────────────────
-# バックテスト結果（5,089レース）より最適化:
-#   対象会場: 盛岡(35), 水沢(36), 浦和(42), 大井(44)  ※netkeiba 内部コード
-#   prob≥0.35: ROI 181.9%（0.25-0.35帯は赤字）
-#   馬単 ROI 157.3% > 馬連 144.9% > 複勝 118.8% > 単勝 100.1%
-#   3連複/3連単は未検証のため除外
-#
-# ※ 推論時は jockey_id が部分的に欠損するため確率が圧縮される。
-#   バックテスト（完全特徴量）の 0.35 相当 → 推論では 0.25 前後に対応。
-#   信頼度差 ≥ 0.05 の二次フィルターで精度を担保する。
-NAR_MIN_HONMEI_PROB  = 0.25   # 推論時の特徴量欠損を考慮して調整
-NAR_WIN_BLEND        = 0.85   # win_model の重み（JRA=0.70）馬単重視のため勝ちモデルを優先
-NAR_TAKE = {"馬連": 0.25, "馬単": 0.25}  # NAR 控除率（JRA より高め）
-
 VENUE_COLORS: dict[str, str] = {
-    # JRA
     "札幌": "#1a5276", "函館": "#154360", "福島": "#4a7c4e",
     "新潟": "#8b4513", "東京": "#1a472a", "中山": "#8b0000",
     "中京": "#b8860b", "京都": "#6b4c9a", "阪神": "#1b3a6b",
     "小倉": "#2f6b9a",
-    # NAR（地方競馬）
-    "門別": "#2e4057", "盛岡": "#4d7c5f", "水沢": "#5c6b4a",
-    "浦和": "#7b3f20", "船橋": "#1f5f7a", "大井": "#2c3e50",
-    "川崎": "#6c3b8a", "金沢": "#7a6400", "笠松": "#3d5a3e",
-    "名古屋": "#8b2500", "園田": "#4a5e6b", "姫路": "#5e3a6b",
-    "高知": "#4a7c4e", "佐賀": "#6b4c2a", "帯広": "#1a3a5c",
 }
 DEFAULT_COLOR = "#333333"
-
-# ======================================================================
-# org 判定（平日→NAR, 土日→JRA）
-# ======================================================================
-
-def get_org(target_date: date) -> str:
-    """平日（月〜金）は NAR、土日は JRA を返す。"""
-    return "nar" if target_date.weekday() < 5 else "jra"
-
 
 # ======================================================================
 # ロガー初期化
@@ -167,8 +136,7 @@ def _synth_odds(odds_list: list[float]) -> float:
 
 
 def _est_odds(prob: float, bet_type: str, org: str = "jra") -> float:
-    take_table = NAR_TAKE if org == "nar" else JRA_TAKE
-    take = take_table.get(bet_type, 0.225)
+    take = JRA_TAKE.get(bet_type, 0.225)
     return (1.0 - take) / max(prob, 0.001)
 
 
@@ -349,7 +317,7 @@ def predict_and_bet(
     win_probs = trainer.model.predict(X, num_threads=1)
     if trainer.place_model is not None:
         place_probs = trainer.place_model.predict(X, num_threads=1)
-        win_blend = NAR_WIN_BLEND if org == "nar" else 0.7
+        win_blend = 0.7
         probs = win_blend * win_probs + (1.0 - win_blend) * place_probs
     else:
         probs = win_probs
@@ -365,7 +333,7 @@ def predict_and_bet(
     n_entries = len(entries)
 
     # 改善②: 出走頭数に応じた動的閾値（多頭数は確率が薄まるため厳格化）
-    base_threshold = NAR_MIN_HONMEI_PROB if org == "nar" else MIN_HONMEI_PROB
+    base_threshold = MIN_HONMEI_PROB
     entries_adj = min(
         max(0, n_entries - ENTRIES_THRESHOLD_BASE) * ENTRIES_THRESHOLD_ADJ,
         ENTRIES_THRESHOLD_CAP,
@@ -500,14 +468,11 @@ def predict_and_bet(
         else []
     )
 
-    # --- 3連複 / 3連単: NAR は未検証のため除外 ---
-    # pool: (馬番str, valid_ids_index_or_None)
-    # vi=None の馬（オッズ未取得）でもプールに加え、Harville はモデル確率で代替する
     pool: list[tuple[str, int | None]] = []
     sanrenfuku_combos: list[tuple[str, str]] = []
     sanrentan_combos:  list[tuple[str, str]] = []
 
-    if org != "nar":
+    if True:
         for _, row in partner_rows.iterrows():
             vi = vidx(str(row["horse_id"]))
             pool.append((str(int(row["horse_number"])), vi))
@@ -887,69 +852,36 @@ def main() -> None:
         action="store_true",
         help="LINE 送信をスキップしてローカルに JSON を出力",
     )
-    parser.add_argument(
-        "--org",
-        choices=["jra", "nar", "auto"],
-        default="auto",
-        help="競馬主催者 (auto=平日NAR/土日JRA, default: auto)",
-    )
     args = parser.parse_args()
     target_date = date.fromisoformat(args.date)
-
-    org = get_org(target_date) if args.org == "auto" else args.org
+    org = "jra"
 
     t0 = time.time()
     logger.info("=" * 60)
-    logger.info(f"daily_batch 開始: {target_date}  [org={org.upper()}]")
+    logger.info(f"daily_batch 開始: {target_date}  [JRA]")
     logger.info("=" * 60)
 
     # ── 1. モデル・履歴読み込み ──────────────────────────────────
     logger.info("[1/5] モデル・FeatureEngineer 読み込み")
-    model_path = settings.nar_model_path if org == "nar" else settings.model_path
-    stats_path  = settings.nar_stats_path  if org == "nar" else settings.stats_path
-
-    # NAR モデルが存在しない場合は JRA モデルで代替（初期運用時）
-    if org == "nar" and not model_path.exists():
-        logger.warning(f"  NAR モデルが見つかりません ({model_path})。JRA モデルで代替します。")
-        model_path = settings.model_path
-        stats_path  = settings.stats_path
-
-    trainer = ModelTrainer.load(model_path, org=org)
+    trainer = ModelTrainer.load(settings.model_path, org=org)
 
     # ── 2. FeatureEngineer 構築 ──────────────────────────────────
     logger.info("[2/5] FeatureEngineer 構築（feature_stats.pkl から）")
-    fe = FeatureEngineer.from_stats(stats_path)
-
-    # NAR: 直近成績 CSV が存在すれば history に読み込み recent_avg_pos を有効化。
-    # NAR モデルでは recent_avg_pos が最重要特徴量（gain 30.6%）のため必須。
-    # nar_results.csv はリポジトリに含まれ、collect_weekly.yml が週次更新する。
-    if org == "nar":
-        nar_hist_path = ROOT / "data" / "raw" / "nar_results.csv"
-        if nar_hist_path.exists():
-            nar_hist = pd.read_csv(nar_hist_path, dtype=str)
-            fe.history = fe._preprocess_history(nar_hist)
-            logger.info(f"  NAR 直近成績ロード: {len(nar_hist):,} rows → recent_avg_pos 有効")
-        else:
-            logger.warning("  nar_results.csv が見つかりません。recent_avg_pos = NaN になります。")
-
+    fe = FeatureEngineer.from_stats(settings.stats_path)
     logger.info("  FeatureEngineer 準備完了")
 
     # ── 3. 当日レーススケジュール取得 ────────────────────────────
     logger.info("[3/5] 当日レーススケジュール取得")
-    scraper = NARScraper() if org == "nar" else NetkeibaScraper()
+    scraper = NetkeibaScraper()
     try:
         schedule = scraper.fetch_race_schedule_by_date(target_date)
     except Exception as e:
         logger.error(f"スケジュール取得失敗: {e}")
         schedule = {}
 
-    # 対象会場のみ絞り込み（settings.*_target_jyo_codes）
+    # 対象会場のみ絞り込み（settings.target_jyo_codes）
     jyo_to_name = scraper.VENUE_CODE_TO_NAME
-    target_code_list = (
-        settings.nar_target_jyo_code_list if org == "nar"
-        else settings.target_jyo_code_list
-    )
-    target_venues = {jyo_to_name[c] for c in target_code_list if c in jyo_to_name}
+    target_venues = {jyo_to_name[c] for c in settings.target_jyo_code_list if c in jyo_to_name}
     schedule = {k: v for k, v in schedule.items() if k in target_venues}
     if not schedule:
         logger.warning(f"  対象会場なし（target_venues={target_venues}）")

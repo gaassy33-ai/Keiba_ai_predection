@@ -56,10 +56,6 @@ MIN_HONMEI_PROB   = 0.15
 MIN_GAP           = 0.05
 EV_THRESHOLD      = 1.05     # model_prob × odds ≥ 1.05
 
-# NAR/JRA 判定（平日→NAR, 土日→JRA）
-def get_org(d: date) -> str:
-    return "nar" if d.weekday() < 5 else "jra"
-
 # ======================================================================
 # ロガー
 # ======================================================================
@@ -295,7 +291,6 @@ def predict_single_race(
     race_info,  # src.scraper.base_scraper.RaceInfo
     fe: FeatureEngineer,
     trainer: ModelTrainer,
-    org: str = "jra",
 ) -> dict | None:
     """
     1レースの予測と買い目を生成する。
@@ -306,7 +301,7 @@ def predict_single_race(
     Returns dict with result including 'mark' (◎/○/△).
     """
     from daily_batch import predict_and_bet
-    result = predict_and_bet(race_info, fe, trainer, org=org)
+    result = predict_and_bet(race_info, fe, trainer)
     if result is None:
         return None
 
@@ -343,33 +338,22 @@ def run_notify_loop(
     2. 60秒ごとに発走25〜35分前のレースを検出
     3. 対象レースを予測 → EVフィルタ → LINE通知
     """
-    org = get_org(target_date)
     logger.info("=" * 60)
-    logger.info(f"odds_notify 起動: {target_date}  [org={org.upper()}]")
+    logger.info(f"odds_notify 起動: {target_date}  [JRA]")
     logger.info(f"  EV閾値={EV_THRESHOLD}  通知タイミング=発走{NOTIFY_BEFORE_MIN}分前±{NOTIFY_WINDOW_MIN}分")
     logger.info("=" * 60)
 
-    # ── モデル・FeatureEngineer 読み込み ────────────────────────
-    model_path = settings.nar_model_path if org == "nar" else settings.model_path
-    stats_path  = settings.nar_stats_path  if org == "nar" else settings.stats_path
-
-    if org == "nar" and not model_path.exists():
-        logger.warning("NAR モデルが見つかりません。JRA モデルで代替します。")
-        model_path = settings.model_path
-        stats_path  = settings.stats_path
-
     logger.info("[1/3] モデル読み込み中...")
-    trainer = ModelTrainer.load(model_path, org=org)
+    trainer = ModelTrainer.load(settings.model_path, org="jra")
 
     logger.info("[2/3] FeatureEngineer 読み込み中...")
-    fe = FeatureEngineer.from_stats(stats_path)
+    fe = FeatureEngineer.from_stats(settings.stats_path)
 
     # ── スケジュール取得 ────────────────────────────────────────
     logger.info("[3/3] レーススケジュール取得中...")
     schedule: list[dict] = []
     with RaceScheduleFetcher() as fetcher:
         all_races = fetcher.fetch_race_list(target_date)
-        # JRA/NAR の対象会場に絞る
         schedule = fetcher.filter_by_jyo(all_races) if settings.target_jyo_code_list else all_races
 
     if not schedule:
@@ -446,7 +430,7 @@ def run_notify_loop(
                             continue
 
                         # 予測実行
-                        result = predict_single_race(race_info, fe, trainer, org=org)
+                        result = predict_single_race(race_info, fe, trainer)
                         if result is None:
                             logger.info(f"  スキップ（データ不足）: {race_id}")
                             continue

@@ -7,11 +7,6 @@ on:
     - cron: "0 17 * * 0"   # 日 17:00 UTC = 月 02:00 JST
   workflow_dispatch:
     inputs:
-      org:
-        description: "競馬主催者 (jra / nar)"
-        type: choice
-        options: [jra, nar]
-        default: jra
       start:
         description: "収集開始日 (YYYY-MM-DD, 空=org別デフォルト)"
         default: ""
@@ -55,7 +50,6 @@ jobs:
           SELENIUM_HEADLESS: "true"
           TZ: "Asia/Tokyo"
         run: |
-          ORG_ARG="--org ${{ github.event.inputs.org || 'jra' }}"
           START_ARG=""
           END_ARG=""
           if [ -n "${{ github.event.inputs.start }}" ]; then
@@ -64,16 +58,14 @@ jobs:
           if [ -n "${{ github.event.inputs.end }}" ]; then
             END_ARG="--end ${{ github.event.inputs.end }}"
           fi
-          python collect_weekly.py $ORG_ARG $START_ARG $END_ARG
+          python collect_weekly.py --org jra $START_ARG $END_ARG
 
       - name: 更新データを commit & push
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add data/raw/test_results.csv \
-                  data/raw/test_meta.csv    \
-                  data/raw/nar_results.csv  \
-                  data/raw/nar_meta.csv     || true
+                  data/raw/test_meta.csv    || true
           git diff --staged --quiet && echo "No new race data" && exit 0
           git commit -m "data: 週次レース結果追加 $(date +'%Y-%m-%d')"
           git push

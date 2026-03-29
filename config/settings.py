@@ -56,30 +56,16 @@ class Settings(BaseSettings):
     enable_shap: bool = True
 
     # ------------------------------------------------------------------
-    # モデル（NAR）
-    # ------------------------------------------------------------------
-    nar_model_path: Path = BASE_DIR / "data" / "models" / "nar_lgbm_model.pkl"
-    nar_stats_path: Path = BASE_DIR / "data" / "models" / "nar_feature_stats.pkl"
-
-    # ------------------------------------------------------------------
     # スケジューラー
     # ------------------------------------------------------------------
     notify_before_minutes: int = 20
     # JRA 監視対象の競馬場コード（"05,06" のようなカンマ区切り文字列）
     # デフォルトは全10会場（空文字の場合も全会場対象）
     target_jyo_codes: str = "01,02,03,04,05,06,07,08,09,10"
-    # NAR 監視対象の競馬場コード（netkeiba 内部コード）
-    # バックテスト結果より ROI プラス圏の4場に限定:
-    #   35=盛岡(ROI 185%), 36=水沢(ROI 102%), 42=浦和(ROI 86%), 44=大井(ROI 86%)
-    nar_target_jyo_codes: str = "35,36,42,44"
 
     @property
     def target_jyo_code_list(self) -> list[str]:
         return [c.strip() for c in self.target_jyo_codes.split(",") if c.strip()]
-
-    @property
-    def nar_target_jyo_code_list(self) -> list[str]:
-        return [c.strip() for c in self.nar_target_jyo_codes.split(",") if c.strip()]
 
     # ------------------------------------------------------------------
     # ログ
