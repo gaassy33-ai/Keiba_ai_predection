@@ -98,6 +98,88 @@ def _send_line_message(msg: dict, dry_run: bool = False) -> None:
         logger.info(f"LINE 送信完了 (status={resp.status_code})")
 
 
+def build_skip_notify_flex(
+    race_info_dict: dict,
+    result: dict,
+    start_time: datetime,
+) -> dict:
+    """
+    EVフィルタ不通過（△）レース向けの「投票対象なし」Flex Message を構築する。
+    """
+    race_name = race_info_dict.get("race_name") or f"{result['race_num']}"
+    jyo_name  = race_info_dict.get("jyo_name", "")
+    start_str = start_time.strftime("%H:%M")
+    hon_num   = result["honmei_num"]
+    hon_name  = result["honmei_name"]
+    hon_prob  = result["honmei_prob"]
+    t_prob    = result.get("taikou_prob", 0.0)
+    gap       = result.get("gap", 0.0)
+    hon_odds  = result.get("honmei_odds", float("nan"))
+    hon_ev    = result.get("honmei_ev", float("nan"))
+    prob_thr  = result.get("prob_threshold", MIN_HONMEI_PROB)
+
+    odds_str = f"{hon_odds:.1f}倍" if not np.isnan(hon_odds) else "未取得"
+    ev_str   = f"{hon_ev:.2f}"    if not np.isnan(hon_ev)   else "--"
+
+    # スキップ理由タグ（複数ありうる）
+    reasons = []
+    if result.get("skip_prob"):
+        reasons.append(f"確率不足 {hon_prob:.1%}<{prob_thr:.1%}")
+    if result.get("skip_gap"):
+        reasons.append(f"差不足 {gap:.1%}<{MIN_GAP:.1%}")
+    if result.get("skip_ev"):
+        reasons.append(f"EV不足 {ev_str}<{EV_THRESHOLD}")
+    reason_str = " / ".join(reasons) if reasons else "条件未達"
+
+    bubble = {
+        "type": "bubble",
+        "size": "mega",
+        "header": {
+            "type": "box",
+            "layout": "vertical",
+            "backgroundColor": "#555555",
+            "paddingAll": "14px",
+            "contents": [
+                {"type": "text",
+                 "text": f"⚠️ 発走{start_str} {jyo_name} {result['race_num']}",
+                 "color": "#ffffff", "size": "sm", "weight": "bold"},
+                {"type": "text",
+                 "text": race_name,
+                 "color": "#ffffffcc", "size": "xs", "margin": "xs", "wrap": True},
+            ],
+        },
+        "body": {
+            "type": "box",
+            "layout": "vertical",
+            "paddingAll": "14px",
+            "contents": [
+                {"type": "text", "text": "投票対象なし",
+                 "weight": "bold", "size": "xl", "color": "#cc3300"},
+                {"type": "separator", "margin": "sm"},
+                {"type": "text",
+                 "text": f"△ {hon_num} {hon_name}",
+                 "size": "md", "color": "#555555", "margin": "sm", "weight": "bold"},
+                {"type": "text",
+                 "text": f"確率 {hon_prob:.1%}  差+{gap:.1%}  対抗{t_prob:.1%}",
+                 "size": "xs", "color": "#888888", "margin": "xs", "wrap": True},
+                {"type": "text",
+                 "text": f"オッズ {odds_str}  EV={ev_str}",
+                 "size": "xs", "color": "#888888", "margin": "xs"},
+                {"type": "separator", "margin": "sm"},
+                {"type": "text",
+                 "text": f"理由: {reason_str}",
+                 "size": "xs", "color": "#cc3300", "margin": "sm", "wrap": True},
+            ],
+        },
+    }
+
+    return {
+        "type": "flex",
+        "altText": f"⚠️ {start_str} {jyo_name}{result['race_num']} 投票対象なし（{reason_str}）",
+        "contents": bubble,
+    }
+
+
 def build_race_notify_flex(
     race_info_dict: dict,
     result: dict,
@@ -382,11 +464,14 @@ def run_notify_loop(
                         )
 
                         if not is_buy:
-                            logger.info(f"  フィルタ不通過（△）: {race_id} → 通知しません")
-                            notified.add(race_id)  # △も送信済みとして記録して重複防止
+                            logger.info(f"  フィルタ不通過（△）: {race_id} → 投票対象なし通知を送信")
+                            skip_msg = build_skip_notify_flex(race_sched, result, start_time)
+                            _send_line_message(skip_msg, dry_run=dry_run)
+                            notified.add(race_id)
+                            logger.info(f"  ✅ 投票対象なし通知完了: {race_id}  △{hon_name}")
                             continue
 
-                        # ── LINE 通知 ──────────────────────────────
+                        # ── LINE 通知（◎/○）──────────────────────
                         flex_msg = build_race_notify_flex(race_sched, result, start_time)
                         _send_line_message(flex_msg, dry_run=dry_run)
                         notified.add(race_id)

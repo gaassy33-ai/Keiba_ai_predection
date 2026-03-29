@@ -38,9 +38,6 @@ class ModelTrainer:
     #   - learning_rate: 0.05 → 0.02（細かいステップで収束・木数増加）
     #   - num_leaves: 63 → 127（全会場データ増加に対応した表現力向上）
     #   - EARLY_STOPPING_ROUNDS: 50 → 100（早期終了を緩和して十分探索）
-    # 改善⑨: odds_log/popularity_rank_norm を FEATURE_COLUMNS から除外
-    #   個別馬オッズは予測特徴量ではなく EV フィルタとして post-prediction 活用
-    #   → モデルがバリュー馬を独立に発見できる設計に戻す
     # ----------------------------------------------------------------
     LGBM_PARAMS = {
         "objective": "binary",
@@ -89,7 +86,7 @@ class ModelTrainer:
         group_col : str
             グループ分けに使うカラム名（data leakage 防止）
         """
-        X = df[self.feature_columns].apply(pd.to_numeric, errors="coerce").fillna(0)
+        X = df[self.feature_columns].copy()
         y = df[label_col].values
         groups = df[group_col].values
 
@@ -146,7 +143,7 @@ class ModelTrainer:
 
     def _fit_place_model(self, df: pd.DataFrame, group_col: str = "race_id") -> None:
         """is_placed（3着以内）を目的変数としたモデルを学習する。"""
-        X = df[self.feature_columns].apply(pd.to_numeric, errors="coerce").fillna(0)
+        X = df[self.feature_columns].copy()
         y = df["is_placed"].values
         groups = df[group_col].values
 
@@ -249,22 +246,19 @@ class ModelTrainer:
     # 保存 / 読み込み
     # ------------------------------------------------------------------
 
-    def save(self, path: Path | None = None, org: str = "jra") -> None:
-        if path is None:
-            path = settings.nar_model_path if org == "nar" else settings.model_path
+    def save(self, path: Path | None = None) -> None:
+        path = path or settings.model_path
         path.parent.mkdir(parents=True, exist_ok=True)
         payload = {"model": self.model, "place_model": self.place_model}
         joblib.dump(payload, path)
         logger.info(f"Model saved to {path}")
 
         # 特徴量重要度を JSON でも保存（改善③）
-        importance_name = f"{org}_feature_importance.json" if org != "jra" else "feature_importance.json"
-        self.save_feature_importance(path.parent / importance_name)
+        self.save_feature_importance(path.parent / "feature_importance.json")
 
     @classmethod
-    def load(cls, path: Path | None = None, org: str = "jra") -> "ModelTrainer":
-        if path is None:
-            path = settings.nar_model_path if org == "nar" else settings.model_path
+    def load(cls, path: Path | None = None) -> "ModelTrainer":
+        path = path or settings.model_path
         instance = cls()
         raw = joblib.load(path)
         if isinstance(raw, dict):
@@ -273,7 +267,7 @@ class ModelTrainer:
         else:
             # 旧フォーマット（Booster 直接保存）に対する後方互換
             instance.model = raw
-        logger.info(f"Model loaded from {path} (org={org})")
+        logger.info(f"Model loaded from {path}")
         return instance
 
 
