@@ -745,6 +745,27 @@ class NetkeibaScraper(BaseScraper):
                 horse_text = ""
             horse_num = int(horse_text) if horse_text and horse_text.isdigit() else 0
 
+            # オッズ: td.Txt_R.Popular (td[9]) に単勝オッズが入っている
+            # 人気順: td.Popular.Popular_Ninki (td[10])
+            # ※ td[11] は FavRegist（お気に入り登録）で空なので使わない
+            odds_td = tr.select_one("td.Txt_R.Popular") or tr.select_one("td.Popular")
+            odds_val: float | None = None
+            if odds_td:
+                odds_text = odds_td.get_text(strip=True).replace(",", "")
+                try:
+                    odds_val = float(odds_text)
+                except (ValueError, TypeError):
+                    odds_val = None
+
+            popularity_td = tr.select_one("td.Popular_Ninki") or tr.select_one("td.Popular.Txt_C")
+            popularity_val: int | None = None
+            if popularity_td:
+                pop_text = re.sub(r'\D', '', popularity_td.get_text(strip=True))
+                try:
+                    popularity_val = int(pop_text) if pop_text else None
+                except (ValueError, TypeError):
+                    popularity_val = None
+
             entries.append(HorseRecord(
                 horse_id=horse_id,
                 horse_name=horse_link.get_text(strip=True) if horse_link else "",
@@ -757,6 +778,8 @@ class NetkeibaScraper(BaseScraper):
                 jockey_name=jockey_link.get_text(strip=True) if jockey_link else "",
                 trainer_id=trainer_id,
                 trainer_name=trainer_link.get_text(strip=True) if trainer_link else "",
+                odds=odds_val,
+                popularity=popularity_val,
             ))
 
         logger.info(f"出走馬 {len(entries)} 頭: {[e.horse_name for e in entries[:5]]}")

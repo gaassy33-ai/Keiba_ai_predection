@@ -170,9 +170,23 @@ class RaceScheduleFetcher:
             )
             race_name = name_tag.get_text(strip=True) if name_tag else ""
 
-            # 競馬場名（race_id[4:6] から補完）
+            # 競馬場名：CSS から取得できない場合は race_id[4:6] のコードで補完
+            _JYO_MAP = {
+                "01": "札幌", "02": "函館", "03": "福島", "04": "新潟",
+                "05": "東京", "06": "中山", "07": "中京", "08": "京都",
+                "09": "阪神", "10": "小倉",
+                # NAR
+                "30": "門別", "31": "北見", "32": "岩見沢", "33": "帯広",
+                "34": "旭川", "35": "盛岡", "36": "水沢", "37": "上山",
+                "38": "三条", "39": "足利", "40": "宇都宮", "41": "高崎",
+                "42": "浦和", "43": "船橋", "44": "大井", "45": "川崎",
+                "46": "金沢", "47": "笠松", "48": "名古屋", "49": "紀三井寺",
+                "50": "園田", "51": "姫路", "52": "益田", "53": "福山",
+                "54": "高知", "55": "佐賀", "56": "荒尾", "57": "中津",
+            }
+            jyo_code = race_id[4:6]
             jyo_tag = container.select_one(".RaceList_ItemJyo, [class*='Jyo'], [class*='Place']")
-            jyo_name = jyo_tag.get_text(strip=True) if jyo_tag else ""
+            jyo_name = (jyo_tag.get_text(strip=True) if jyo_tag else "") or _JYO_MAP.get(jyo_code, "")
 
             races.append({
                 "race_id":     race_id,

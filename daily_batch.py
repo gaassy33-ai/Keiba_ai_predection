@@ -381,10 +381,12 @@ def predict_and_bet(
     # 改善⑨: EV フィルタ — feat_df["odds"] は build_entry_features で付加済み
     honmei_id_str = str(pred_df.iloc[0]["horse_id"])
     odds_col_map  = feat_df.set_index("horse_id")["odds"] if "odds" in feat_df.columns else {}
-    honmei_odds_pre = float(odds_col_map.get(honmei_id_str, float("nan")))
+    _raw_odds = odds_col_map.get(honmei_id_str)
+    honmei_odds_pre = float(_raw_odds) if _raw_odds is not None else float("nan")
     honmei_ev = (honmei_prob * honmei_odds_pre
-                 if not np.isnan(honmei_odds_pre) else 0.0)
-    ev_ok = honmei_ev >= EV_THRESHOLD
+                 if _raw_odds is not None and not np.isnan(honmei_odds_pre) else float("nan"))
+    # オッズ未取得時（nan）は EV フィルタをスキップして確率フィルタのみ適用
+    ev_ok = (np.isnan(honmei_ev) or honmei_ev >= EV_THRESHOLD)
 
     if not gap_ok or honmei_prob < prob_threshold or not ev_ok:
         mark = "△"
@@ -398,7 +400,7 @@ def predict_and_bet(
     logger.info(
         f"  probs: {mark}{pred_df.iloc[0]['horse_name']}={honmei_prob:.4f}"
         f"  対抗={taikou_prob:.4f}  差={gap:.4f}"
-        f"  EV={honmei_ev:.2f}({'OK' if ev_ok else 'NG'})"
+        f"  EV={honmei_ev:.2f}({'OK' if ev_ok else 'NG'}){'※オッズ未取得' if np.isnan(honmei_ev) else ''}"
     )
 
     honmei_row = pred_df.iloc[0]

@@ -423,6 +423,48 @@ def run_notify_loop(
 # エントリーポイント
 # ======================================================================
 
+def _check_settings(dry_run: bool) -> bool:
+    """
+    起動前に必須設定の確認を行う。
+    問題があれば警告を表示して False を返す（dry-run では警告のみ）。
+    """
+    ok = True
+    placeholder = "placeholder_fill_before_run"
+
+    if not dry_run:
+        missing = []
+        if not settings.line_channel_access_token or settings.line_channel_access_token == placeholder:
+            missing.append("LINE_CHANNEL_ACCESS_TOKEN")
+        if not settings.line_target_user_id or settings.line_target_user_id == placeholder:
+            missing.append("LINE_TARGET_USER_ID")
+
+        if missing:
+            logger.error("=" * 60)
+            logger.error("❌ LINE 認証情報が未設定です。LINE通知が送信できません。")
+            logger.error("")
+            logger.error("【設定手順】")
+            logger.error("  1. https://developers.line.biz/console/ にアクセス")
+            logger.error("  2. 対象チャンネル → Messaging API タブを開く")
+            logger.error("  3. 「チャンネルアクセストークン（長期）」を発行・コピー")
+            logger.error("  4. keiba-prediction/.env を開いて以下を本物の値に書き換える:")
+            for key in missing:
+                logger.error(f"     {key}=<実際のトークンをここに貼り付け>")
+            logger.error("")
+            logger.error("  ※ LINE_TARGET_USER_ID は LINEアプリ→設定→プロフィール")
+            logger.error("     またはWebhook経由で確認してください (Uで始まる文字列)")
+            logger.error("=" * 60)
+            logger.error("  --dry-run オプションを付けると通知なしで動作確認できます:")
+            logger.error("  python odds_notify.py --dry-run")
+            logger.error("=" * 60)
+            ok = False
+    else:
+        # dry-run でも設定状況を確認して警告表示
+        if settings.line_channel_access_token == placeholder:
+            logger.warning("⚠️  [DRY-RUN] LINE_CHANNEL_ACCESS_TOKEN が未設定です（dry-run なので送信はしません）")
+
+    return ok
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="発走30分前にオッズを取得してLINE通知するスクリプト"
@@ -439,6 +481,10 @@ def main() -> None:
     )
     args = parser.parse_args()
     target_date = date.fromisoformat(args.date)
+
+    if not _check_settings(dry_run=args.dry_run):
+        logger.error("設定を修正してから再実行してください。")
+        sys.exit(1)
 
     try:
         run_notify_loop(target_date, dry_run=args.dry_run)
