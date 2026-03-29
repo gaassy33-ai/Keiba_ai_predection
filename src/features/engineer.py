@@ -42,6 +42,9 @@ class FeatureEngineer:
         self._trainer_stats: pd.DataFrame | None = None
         # 推論時用: save_stats/from_stats でロードされる馬別直近成績
         self._horse_recent_form: pd.DataFrame | None = None
+        # 評論家フィードバック追加特徴量
+        self._jockey_venue_stats: pd.DataFrame | None = None    # 騎手×会場 勝率
+        self._horse_ground_stats: pd.DataFrame | None = None    # 馬場適性（馬別×馬場状態）
 
     # ------------------------------------------------------------------
     # 前処理
@@ -240,6 +243,33 @@ class FeatureEngineer:
                 .reset_index()
             )
 
+        # 騎手×会場 勝率（評論家フィードバック: jockey × venue 交互作用）
+        if "jockey_id" in h.columns and "race_id" in h.columns:
+            h3 = h.copy()
+            h3["venue_code_num"] = pd.to_numeric(
+                h3["race_id"].astype(str).str[4:6], errors="coerce"
+            )
+            self._jockey_venue_stats = (
+                h3[h3["venue_code_num"].notna()]
+                .groupby(["jockey_id", "venue_code_num"])
+                .agg(jockey_venue_win_rate=("is_win", "mean"))
+                .reset_index()
+                .rename(columns={"venue_code_num": "venue_code"})
+            )
+
+        # 馬場適性: 馬別 × ground_condition_code の勝率（評論家フィードバック）
+        if "horse_id" in h.columns and "ground_condition_code" in h.columns:
+            gc = pd.to_numeric(h["ground_condition_code"], errors="coerce")
+            mask = gc.notna()
+            if mask.any():
+                h4 = h[mask].copy()
+                h4["ground_condition_code"] = gc[mask]
+                self._horse_ground_stats = (
+                    h4.groupby(["horse_id", "ground_condition_code"])
+                    .agg(horse_ground_win_rate=("is_win", "mean"))
+                    .reset_index()
+                )
+
         logger.info("Aggregation precomputation done.")
 
     # ------------------------------------------------------------------
@@ -348,6 +378,30 @@ class FeatureEngineer:
 
         # ── 直近成績（改善⑦含む）────────────────────────────────────
         df = self._add_recent_form(df)
+
+        # ── 3歳馬フラグ（評論家フィードバック: 春の3歳馬急成長期対応）────
+        age_num = pd.to_numeric(df.get("age", pd.Series(dtype=float)), errors="coerce")
+        df["is_3yo"] = (age_num == 3).astype(int)
+
+        # ── 騎手×会場 勝率（評論家フィードバック: jockey×venue 交互作用）─
+        if self._jockey_venue_stats is not None and venue_code >= 0:
+            jv = self._jockey_venue_stats[
+                self._jockey_venue_stats["venue_code"] == venue_code
+            ][["jockey_id", "jockey_venue_win_rate"]].copy()
+            jv["jockey_id"] = jv["jockey_id"].astype(str).str.strip()
+            df["jockey_id"] = df["jockey_id"].astype(str).str.strip()
+            df = df.merge(jv, on="jockey_id", how="left")
+        else:
+            df["jockey_venue_win_rate"] = np.nan
+
+        # ── 馬場適性（評論家フィードバック: 馬別 × ground_condition 勝率）─
+        if self._horse_ground_stats is not None:
+            gs = self._horse_ground_stats[
+                self._horse_ground_stats["ground_condition_code"] == ground_condition_code
+            ][["horse_id", "horse_ground_win_rate"]].copy()
+            df = df.merge(gs, on="horse_id", how="left")
+        else:
+            df["horse_ground_win_rate"] = np.nan
 
         return df
 
@@ -647,6 +701,8 @@ class FeatureEngineer:
             "jockey_course_stats":  self._jockey_course_stats,
             "trainer_stats":        self._trainer_stats,
             "horse_recent_form":    horse_recent_form,
+            "jockey_venue_stats":   self._jockey_venue_stats,
+            "horse_ground_stats":   self._horse_ground_stats,
         }
         with open(path, "wb") as f:
             pickle.dump(stats, f)
@@ -729,6 +785,8 @@ class FeatureEngineer:
         instance._jockey_course_stats  = stats.get("jockey_course_stats")
         instance._trainer_stats        = stats.get("trainer_stats")
         instance._horse_recent_form    = stats.get("horse_recent_form")
+        instance._jockey_venue_stats   = stats.get("jockey_venue_stats")
+        instance._horse_ground_stats   = stats.get("horse_ground_stats")
         if instance._horse_recent_form is not None:
             logger.info(
                 f"Feature stats loaded from {path} "
@@ -837,4 +895,8 @@ class FeatureEngineer:
         #       バリュー馬を発見できなくなる。
         #       代わりに予測後の EV フィルタ（model_prob × odds ≥ EV_THRESHOLD）
         #       として post-prediction で活用する。
+        # 評論家フィードバック追加特徴量 (2026-03)
+        "is_3yo",                # 3歳馬フラグ（春の急成長期対応）
+        "jockey_venue_win_rate", # 騎手×会場の勝率（jockey×venue 交互作用）
+        "horse_ground_win_rate", # 馬場適性（馬別 × ground_condition の勝率）
     ]
