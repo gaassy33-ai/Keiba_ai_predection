@@ -53,7 +53,7 @@ class ModelTrainer:
         "bagging_fraction": 0.8,
         "bagging_freq": 5,
         "lambda_l1": 0.1,
-        "lambda_l2": 0.1,
+        "lambda_l2": 1.0,   # odds_log過学習抑制のため強化（0.1→1.0）
         "verbose": -1,
         "n_jobs": -1,
         "random_state": 42,

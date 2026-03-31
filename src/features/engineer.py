@@ -890,11 +890,10 @@ class FeatureEngineer:
         # 改善⑦: 前走パフォーマンス
         "prev_margin",
         "prev_last3f_rank_norm",
-        # NOTE: odds_log / popularity_rank_norm は FEATURE_COLUMNS に含めない。
-        # 理由: 個別馬のオッズを直接予測に使うとモデルが「市場の複写」になり
-        #       バリュー馬を発見できなくなる。
-        #       代わりに予測後の EV フィルタ（model_prob × odds ≥ EV_THRESHOLD）
-        #       として post-prediction で活用する。
+        # バックテスト検証結果 (2026-03): odds_log除外はROI大幅低下を招くため復活
+        # 上限30倍キャップ済み（build_entry_features内）で極端な長期人気の影響を抑制
+        # lambda_l2強化（trainer.py）でodds_log過学習を抑制
+        "odds_log",              # 単勝オッズlog変換（cap=30）
         # 評論家フィードバック追加特徴量 (2026-03)
         "is_3yo",                # 3歳馬フラグ（春の急成長期対応）
         "jockey_venue_win_rate", # 騎手×会場の勝率（jockey×venue 交互作用）
