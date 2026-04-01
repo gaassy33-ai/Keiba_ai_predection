@@ -890,12 +890,5 @@ class FeatureEngineer:
         # 改善⑦: 前走パフォーマンス
         "prev_margin",
         "prev_last3f_rank_norm",
-        # バックテスト検証結果 (2026-03): odds_log除外はROI大幅低下を招くため復活
-        # 上限30倍キャップ済み（build_entry_features内）で極端な長期人気の影響を抑制
-        # lambda_l2強化（trainer.py）でodds_log過学習を抑制
-        "odds_log",              # 単勝オッズlog変換（cap=30）
-        # 評論家フィードバック追加特徴量 (2026-03)
-        "is_3yo",                # 3歳馬フラグ（春の急成長期対応）
-        "jockey_venue_win_rate", # 騎手×会場の勝率（jockey×venue 交互作用）
-        "horse_ground_win_rate", # 馬場適性（馬別 × ground_condition の勝率）
+        # 旧モデル復帰 (2026-04): 追加特徴量(odds_log/is_3yo等)は2026 OOSで過学習を招いたため除外
     ]
