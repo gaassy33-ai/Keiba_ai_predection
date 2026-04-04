@@ -45,6 +45,8 @@ class FeatureEngineer:
         # 評論家フィードバック追加特徴量
         self._jockey_venue_stats: pd.DataFrame | None = None    # 騎手×会場 勝率
         self._horse_ground_stats: pd.DataFrame | None = None    # 馬場適性（馬別×馬場状態）
+        # 新規追加特徴量
+        self._horse_dist_stats: pd.DataFrame | None = None      # 馬の距離帯適性（≥5走フィルタ）
 
     # ------------------------------------------------------------------
     # 前処理
@@ -270,6 +272,29 @@ class FeatureEngineer:
                     .reset_index()
                 )
 
+        # ② 馬の距離帯適性（≥5走フィルタで信頼性確保）
+        if "horse_id" in h.columns and "distance" in h.columns:
+            h5 = h.copy()
+            h5["_dist_bin"] = pd.cut(
+                pd.to_numeric(h5["distance"], errors="coerce"),
+                bins=[0, 1400, 1800, 2200, 9999],
+                labels=[0, 1, 2, 3],
+            ).astype("Int64")
+            dist_grp = (
+                h5[h5["_dist_bin"].notna()]
+                .groupby(["horse_id", "_dist_bin"], observed=True)
+                .agg(_win=("is_win", "sum"), _n=("is_win", "count"))
+                .reset_index()
+            )
+            dist_grp["horse_dist_win_rate"] = np.where(
+                dist_grp["_n"] >= 5,
+                dist_grp["_win"] / dist_grp["_n"],
+                np.nan,
+            )
+            self._horse_dist_stats = dist_grp[
+                ["horse_id", "_dist_bin", "horse_dist_win_rate"]
+            ].rename(columns={"_dist_bin": "dist_bin"})
+
         logger.info("Aggregation precomputation done.")
 
     # ------------------------------------------------------------------
@@ -403,6 +428,26 @@ class FeatureEngineer:
         else:
             df["horse_ground_win_rate"] = np.nan
 
+        # ── ② 距離帯適性（馬別 × distance_bin 勝率、≥5走フィルタ済み）──
+        if self._horse_dist_stats is not None:
+            dist_bin_val = int(pd.cut(
+                [distance], bins=[0, 1400, 1800, 2200, 9999], labels=[0, 1, 2, 3]
+            )[0])
+            ds = self._horse_dist_stats[
+                self._horse_dist_stats["dist_bin"] == dist_bin_val
+            ][["horse_id", "horse_dist_win_rate"]].copy()
+            df = df.merge(ds, on="horse_id", how="left")
+        else:
+            df["horse_dist_win_rate"] = np.nan
+
+        # ── ④ クラス変動フラグ（昇降級: 正=昇級 負=降級）────────────────
+        if "prev_race_class_code" in df.columns and race_class_code >= 0:
+            df["class_change"] = race_class_code - pd.to_numeric(
+                df["prev_race_class_code"], errors="coerce"
+            )
+        else:
+            df["class_change"] = np.nan
+
         return df
 
     def _add_recent_form(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -420,6 +465,8 @@ class FeatureEngineer:
         COLS = [
             "recent_avg_pos", "recent_avg_last3f", "recent_top3_rate",
             "prev_margin", "prev_last3f_rank_norm",
+            "recent_pos_trend", "recent_last3f_trend",
+            "prev_race_class_code",
         ]
 
         # ── 推論パス: from_stats() でロード済みの統計を使用 ───────────
@@ -466,26 +513,59 @@ class FeatureEngineer:
         )
 
         # 前走（最新1走）の着差・上がり3Fランク（改善⑦）
-        prev_race = (
-            h.sort_values("race_id", ascending=False)
-            .groupby("horse_id")
-            .first()
-            .reset_index()
-        )
+        all_sorted = h.sort_values(["horse_id", "race_id"], ascending=[True, False])
+        all_sorted = all_sorted.copy()
+        all_sorted["_recent_rank"] = all_sorted.groupby("horse_id").cumcount() + 1
+
+        prev_race = all_sorted[all_sorted["_recent_rank"] == 1].copy()
+
         prev_cols = ["horse_id"]
         if "margin_num" in prev_race.columns:
             prev_cols.append("margin_num")
         if "last3f_rank_norm" in prev_race.columns:
             prev_cols.append("last3f_rank_norm")
+        # ③ トレンド計算用
+        for _tc in ("finish_pos_num", "last_3f_num"):
+            if _tc in prev_race.columns:
+                prev_cols.append(_tc)
+        # ④ 前走クラスコード
+        if "race_class_code_hist" in prev_race.columns:
+            prev_cols.append("race_class_code_hist")
 
         prev_df = prev_race[prev_cols].rename(columns={
             "margin_num": "prev_margin",
             "last3f_rank_norm": "prev_last3f_rank_norm",
+            "finish_pos_num": "_prev_pos",
+            "last_3f_num": "_prev_3f",
+            "race_class_code_hist": "prev_race_class_code",
         })
+
+        # ③ 直近2-5走の平均（トレンド基準）
+        rest = all_sorted[all_sorted["_recent_rank"].between(2, 5)]
+        rest_agg = (
+            rest.groupby("horse_id")
+            .agg(_avg_pos_2_5=("finish_pos_num", "mean"),
+                 _avg_3f_2_5=("last_3f_num", "mean"))
+            .reset_index()
+        )
+        trend_base = prev_df[["horse_id"] + [c for c in ["_prev_pos", "_prev_3f"] if c in prev_df.columns]].merge(
+            rest_agg, on="horse_id", how="left"
+        )
+        if "_prev_pos" in trend_base.columns and "_avg_pos_2_5" in trend_base.columns:
+            trend_base["recent_pos_trend"] = trend_base["_prev_pos"] - trend_base["_avg_pos_2_5"]
+        else:
+            trend_base["recent_pos_trend"] = np.nan
+        if "_prev_3f" in trend_base.columns and "_avg_3f_2_5" in trend_base.columns:
+            trend_base["recent_last3f_trend"] = trend_base["_prev_3f"] - trend_base["_avg_3f_2_5"]
+        else:
+            trend_base["recent_last3f_trend"] = np.nan
+        trend_df = trend_base[["horse_id", "recent_pos_trend", "recent_last3f_trend"]]
 
         # 結合
         df = df.merge(agg, on="horse_id", how="left")
-        df = df.merge(prev_df, on="horse_id", how="left")
+        df = df.merge(prev_df.drop(columns=[c for c in ["_prev_pos", "_prev_3f"] if c in prev_df.columns]),
+                      on="horse_id", how="left")
+        df = df.merge(trend_df, on="horse_id", how="left")
 
         # 存在しない列を NaN で埋める
         for c in COLS:
@@ -523,6 +603,16 @@ class FeatureEngineer:
         h["race_id"] = h["race_id"].astype(str)
         race_meta_df = race_meta_df.copy()
         race_meta_df["race_id"] = race_meta_df["race_id"].astype(str)
+
+        # ④ クラス変動フラグ用: メタのレース名からクラスコードを計算して履歴に付加
+        if "race_name" in race_meta_df.columns:
+            class_map = {
+                rid: self._race_name_to_class_code(rname)
+                for rid, rname in zip(race_meta_df["race_id"], race_meta_df["race_name"])
+            }
+            h["race_class_code_hist"] = h["race_id"].map(class_map)
+            self.history = self.history.copy()
+            self.history["race_class_code_hist"] = self.history["race_id"].map(class_map)
 
         if "race_date" in race_meta_df.columns and race_meta_df["race_date"].notna().any():
             race_meta_df["race_date"] = pd.to_datetime(
@@ -703,6 +793,7 @@ class FeatureEngineer:
             "horse_recent_form":    horse_recent_form,
             "jockey_venue_stats":   self._jockey_venue_stats,
             "horse_ground_stats":   self._horse_ground_stats,
+            "horse_dist_stats":     self._horse_dist_stats,
         }
         with open(path, "wb") as f:
             pickle.dump(stats, f)
@@ -744,24 +835,57 @@ class FeatureEngineer:
             .reset_index()
         )
 
-        prev_race = (
-            h.sort_values("race_id", ascending=False)
-            .groupby("horse_id")
-            .first()
-            .reset_index()
-        )
+        all_sorted_inf = h.sort_values(["horse_id", "race_id"], ascending=[True, False]).copy()
+        all_sorted_inf["_recent_rank"] = all_sorted_inf.groupby("horse_id").cumcount() + 1
+
+        prev_race = all_sorted_inf[all_sorted_inf["_recent_rank"] == 1].copy()
+
         prev_cols = ["horse_id"]
         if "margin_num" in prev_race.columns:
             prev_cols.append("margin_num")
         if "last3f_rank_norm" in prev_race.columns:
             prev_cols.append("last3f_rank_norm")
+        for _tc in ("finish_pos_num", "last_3f_num"):
+            if _tc in prev_race.columns:
+                prev_cols.append(_tc)
+        if "race_class_code_hist" in prev_race.columns:
+            prev_cols.append("race_class_code_hist")
+
         prev_df = prev_race[prev_cols].rename(columns={
             "margin_num": "prev_margin",
             "last3f_rank_norm": "prev_last3f_rank_norm",
+            "finish_pos_num": "_prev_pos",
+            "last_3f_num": "_prev_3f",
+            "race_class_code_hist": "prev_race_class_code",
         })
 
-        result = agg.merge(prev_df, on="horse_id", how="left")
-        for c in ("prev_margin", "prev_last3f_rank_norm"):
+        # ③ トレンド計算
+        rest_inf = all_sorted_inf[all_sorted_inf["_recent_rank"].between(2, 5)]
+        rest_agg_inf = (
+            rest_inf.groupby("horse_id")
+            .agg(_avg_pos_2_5=("finish_pos_num", "mean"),
+                 _avg_3f_2_5=("last_3f_num", "mean"))
+            .reset_index()
+        )
+        trend_base_inf = prev_df[
+            ["horse_id"] + [c for c in ["_prev_pos", "_prev_3f"] if c in prev_df.columns]
+        ].merge(rest_agg_inf, on="horse_id", how="left")
+        if "_prev_pos" in trend_base_inf.columns and "_avg_pos_2_5" in trend_base_inf.columns:
+            trend_base_inf["recent_pos_trend"] = trend_base_inf["_prev_pos"] - trend_base_inf["_avg_pos_2_5"]
+        else:
+            trend_base_inf["recent_pos_trend"] = np.nan
+        if "_prev_3f" in trend_base_inf.columns and "_avg_3f_2_5" in trend_base_inf.columns:
+            trend_base_inf["recent_last3f_trend"] = trend_base_inf["_prev_3f"] - trend_base_inf["_avg_3f_2_5"]
+        else:
+            trend_base_inf["recent_last3f_trend"] = np.nan
+        trend_df_inf = trend_base_inf[["horse_id", "recent_pos_trend", "recent_last3f_trend"]]
+
+        drop_tmp = [c for c in ["_prev_pos", "_prev_3f"] if c in prev_df.columns]
+        result = agg.merge(prev_df.drop(columns=drop_tmp), on="horse_id", how="left")
+        result = result.merge(trend_df_inf, on="horse_id", how="left")
+
+        for c in ("prev_margin", "prev_last3f_rank_norm", "prev_race_class_code",
+                  "recent_pos_trend", "recent_last3f_trend"):
             if c not in result.columns:
                 result[c] = np.nan
         logger.info(f"Horse recent form computed: {len(result):,} horses")
@@ -787,6 +911,7 @@ class FeatureEngineer:
         instance._horse_recent_form    = stats.get("horse_recent_form")
         instance._jockey_venue_stats   = stats.get("jockey_venue_stats")
         instance._horse_ground_stats   = stats.get("horse_ground_stats")
+        instance._horse_dist_stats     = stats.get("horse_dist_stats")
         if instance._horse_recent_form is not None:
             logger.info(
                 f"Feature stats loaded from {path} "
@@ -890,5 +1015,9 @@ class FeatureEngineer:
         # 改善⑦: 前走パフォーマンス
         "prev_margin",
         "prev_last3f_rank_norm",
-        # 旧モデル復帰 (2026-04): 追加特徴量(odds_log/is_3yo等)は2026 OOSで過学習を招いたため除外
+        # 新規追加特徴量 (2026-04)
+        "horse_dist_win_rate",       # ② 距離帯適性（馬別・≥5走フィルタ）
+        "recent_pos_trend",          # ③ 着順トレンド（負=改善, 正=悪化）
+        "recent_last3f_trend",       # ③ 上がり3Fトレンド（負=改善）
+        "class_change",              # ④ クラス変動（負=降級, 0=同級, 正=昇級）
     ]
