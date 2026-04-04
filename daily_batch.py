@@ -7,7 +7,7 @@ daily_batch.py
     python daily_batch.py --date 2026-03-08  # 日付指定
 
 買い目（回収率100%超券種に絞り込み）:
-    - レース絞り込み: honmei_prob ≥ 0.15 かつ 信頼度差 ≥ 0.05
+    - レース絞り込み: honmei_prob ≥ 0.30 かつ 信頼度差 ≥ 0.05 かつ 未勝利・新馬除外
     - 単勝: ◎ 1点
     - 複勝: ◎ 1点（参考表示）
     - 馬連: ◎ - モデル上位5頭から EV 上位 最大3点（トリガミ除外）
@@ -47,8 +47,8 @@ from config.settings import settings
 # ======================================================================
 # 定数
 # ======================================================================
-MIN_HONMEI_PROB      = 0.20   # ○最低勝率（フィルタ①: 0.15-0.20帯は赤字のため除外）
-MARK_STRONG_PROB     = 0.25   # ◎最低勝率（○との境界）
+MIN_HONMEI_PROB      = 0.30   # ○最低勝率（バックテスト: 0.30未満はROI<60%のため除外）
+MARK_STRONG_PROB     = 0.35   # ◎最低勝率（○との境界）
 MIN_CONFIDENCE_GAP   = 0.05   # 勝率差フィルター（以下は△）
 # EV フィルタ（model_prob × odds ≥ 閾値 のみ買い）
 # バックテスト2026実測: EV≥1.15は買いレース42Rに激減→1.05に戻す
@@ -340,10 +340,8 @@ def predict_and_bet(
     )
     prob_threshold = base_threshold + entries_adj
 
-    # 改善③: 新馬・未勝利戦は閾値を追加ブースト
+    # 新馬・未勝利戦は除外（バックテスト: ROI35%と低く再現性が低いため）
     is_maiden = any(k in str(race_info.race_name) for k in MAIDEN_KEYWORDS)
-    if is_maiden:
-        prob_threshold += MAIDEN_PROB_BOOST
 
     gap_ok = gap >= MIN_CONFIDENCE_GAP
 
@@ -357,7 +355,7 @@ def predict_and_bet(
     # オッズ未取得時（nan）は EV フィルタをスキップして確率フィルタのみ適用
     ev_ok = (np.isnan(honmei_ev) or honmei_ev >= EV_THRESHOLD)
 
-    if not gap_ok or honmei_prob < prob_threshold or not ev_ok:
+    if is_maiden or not gap_ok or honmei_prob < prob_threshold or not ev_ok:
         mark = "△"
     elif honmei_prob >= MARK_STRONG_PROB:
         mark = "◎"
