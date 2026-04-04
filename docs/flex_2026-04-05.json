@@ -68,7 +68,7 @@
                     },
                     {
                       "type": "text",
-                      "text": "11.4%  差+0.9%  対抗10.5%",
+                      "text": "10.2%  差+0.1%  対抗10.1%",
                       "size": "xs",
                       "color": "#bbbbbb",
                       "margin": "xs",
@@ -104,14 +104,14 @@
                   "contents": [
                     {
                       "type": "text",
-                      "text": "△ 14 ラインジーク",
+                      "text": "△ 15 ミスタートントン",
                       "size": "sm",
                       "color": "#999999",
                       "wrap": true
                     },
                     {
                       "type": "text",
-                      "text": "24.3%  差+0.9%  対抗23.5%",
+                      "text": "14.7%  差+1.9%  対抗12.8%",
                       "size": "xs",
                       "color": "#bbbbbb",
                       "margin": "xs",
@@ -154,7 +154,7 @@
                     },
                     {
                       "type": "text",
-                      "text": "19.3%  差+9.8%  対抗9.5%",
+                      "text": "10.8%  差+1.6%  対抗9.1%",
                       "size": "xs",
                       "color": "#bbbbbb",
                       "margin": "xs",
@@ -190,14 +190,14 @@
                   "contents": [
                     {
                       "type": "text",
-                      "text": "△ 12 シャンデルナゴル",
+                      "text": "△ 5 エターナルシルバー",
                       "size": "sm",
                       "color": "#999999",
                       "wrap": true
                     },
                     {
                       "type": "text",
-                      "text": "17.1%  差+1.8%  対抗15.3%",
+                      "text": "18.8%  差+3.0%  対抗15.9%",
                       "size": "xs",
                       "color": "#bbbbbb",
                       "margin": "xs",
@@ -240,7 +240,7 @@
                     },
                     {
                       "type": "text",
-                      "text": "17.9%  差+3.1%  対抗14.8%",
+                      "text": "12.1%  差+3.1%  対抗9.0%",
                       "size": "xs",
                       "color": "#bbbbbb",
                       "margin": "xs",
@@ -283,7 +283,7 @@
                     },
                     {
                       "type": "text",
-                      "text": "18.0%  差+0.6%  対抗17.5%",
+                      "text": "12.9%  差+3.1%  対抗9.9%",
                       "size": "xs",
                       "color": "#bbbbbb",
                       "margin": "xs",
@@ -319,14 +319,14 @@
                   "contents": [
                     {
                       "type": "text",
-                      "text": "△ 9 ラヴノー",
+                      "text": "△ 10 ファインサマーデイ",
                       "size": "sm",
                       "color": "#999999",
                       "wrap": true
                     },
                     {
                       "type": "text",
-                      "text": "23.8%  差+0.3%  対抗23.5%",
+                      "text": "15.8%  差+4.7%  対抗11.2%",
                       "size": "xs",
                       "color": "#bbbbbb",
                       "margin": "xs",
@@ -362,14 +362,14 @@
                   "contents": [
                     {
                       "type": "text",
-                      "text": "△ 15 ガンバレベアー",
+                      "text": "△ 5 イノキ",
                       "size": "sm",
                       "color": "#999999",
                       "wrap": true
                     },
                     {
                       "type": "text",
-                      "text": "21.9%  差+1.2%  対抗20.7%",
+                      "text": "18.3%  差+0.1%  対抗18.2%",
                       "size": "xs",
                       "color": "#bbbbbb",
                       "margin": "xs",
@@ -405,14 +405,14 @@
                   "contents": [
                     {
                       "type": "text",
-                      "text": "△ 1 オストラヴァ",
+                      "text": "△ 8 ダイシンアポロン",
                       "size": "sm",
                       "color": "#999999",
                       "wrap": true
                     },
                     {
                       "type": "text",
-                      "text": "21.8%  差+1.5%  対抗20.3%",
+                      "text": "26.2%  差+6.6%  対抗19.6%",
                       "size": "xs",
                       "color": "#bbbbbb",
                       "margin": "xs",
@@ -430,15 +430,14 @@
               "layout": "horizontal",
               "paddingStart": "14px",
               "paddingEnd": "14px",
-              "paddingTop": "9px",
-              "paddingBottom": "9px",
+              "paddingTop": "7px",
+              "paddingBottom": "7px",
               "contents": [
                 {
                   "type": "text",
                   "text": "10R",
                   "size": "sm",
-                  "weight": "bold",
-                  "color": "#7a5500",
+                  "color": "#999999",
                   "flex": 0
                 },
                 {
@@ -449,49 +448,16 @@
                   "contents": [
                     {
                       "type": "text",
-                      "text": "○16 メリークリスマス（単・複）",
+                      "text": "△ 7 ウィンドフォール",
                       "size": "sm",
-                      "weight": "bold",
-                      "color": "#7a5500",
+                      "color": "#999999",
                       "wrap": true
                     },
                     {
                       "type": "text",
-                      "text": "19.3%  差+6.4%  対抗12.9%",
+                      "text": "12.5%  差+0.2%  対抗12.2%",
                       "size": "xs",
-                      "color": "#888888",
-                      "margin": "xs",
-                      "wrap": true
-                    },
-                    {
-                      "type": "text",
-                      "text": "馬連: 16-1 / 8 / 7",
-                      "size": "xs",
-                      "color": "#555555",
-                      "margin": "xs",
-                      "wrap": true
-                    },
-                    {
-                      "type": "text",
-                      "text": "馬単: 16→1 / 16→8 / 16→7",
-                      "size": "xs",
-                      "color": "#7a5500",
-                      "margin": "xs",
-                      "wrap": true
-                    },
-                    {
-                      "type": "text",
-                      "text": "3連複: 16-1-7 / 16-7-11 / 16-1-8 / 16-1-11 / 16-1-14",
-                      "size": "xs",
-                      "color": "#4a4a8a",
-                      "margin": "xs",
-                      "wrap": true
-                    },
-                    {
-                      "type": "text",
-                      "text": "3連単: 16→1→8 / 16→1→7 / 16→1→11 / 16→1→14 / 16→8→1",
-                      "size": "xs",
-                      "color": "#7a3a3a",
+                      "color": "#bbbbbb",
                       "margin": "xs",
                       "wrap": true
                     }
@@ -525,14 +491,14 @@
                   "contents": [
                     {
                       "type": "text",
-                      "text": "△ 1 シャドウメテオ",
+                      "text": "△ 14 ジュタ",
                       "size": "sm",
                       "color": "#999999",
                       "wrap": true
                     },
                     {
                       "type": "text",
-                      "text": "15.4%  差+2.0%  対抗13.4%",
+                      "text": "17.0%  差+3.5%  対抗13.5%",
                       "size": "xs",
                       "color": "#bbbbbb",
                       "margin": "xs",
@@ -568,14 +534,14 @@
                   "contents": [
                     {
                       "type": "text",
-                      "text": "△ 12 プリムツァール",
+                      "text": "△ 11 レーヴブリリアント",
                       "size": "sm",
                       "color": "#999999",
                       "wrap": true
                     },
                     {
                       "type": "text",
-                      "text": "19.2%  差+0.4%  対抗18.7%",
+                      "text": "19.1%  差+0.1%  対抗19.0%",
                       "size": "xs",
                       "color": "#bbbbbb",
                       "margin": "xs",
@@ -598,7 +564,7 @@
           "contents": [
             {
               "type": "text",
-              "text": "◎0R  ○1R  △11R  計12R",
+              "text": "◎0R  ○0R  △12R  計12R",
               "size": "xs",
               "color": "#888888",
               "align": "center"
@@ -670,7 +636,7 @@
                     },
                     {
                       "type": "text",
-                      "text": "22.7%  差+0.8%  対抗22.0%",
+                      "text": "14.8%  差+0.6%  対抗14.2%",
                       "size": "xs",
                       "color": "#bbbbbb",
                       "margin": "xs",
@@ -713,7 +679,7 @@
                     },
                     {
                       "type": "text",
-                      "text": "15.2%  差+2.6%  対抗12.6%",
+                      "text": "12.9%  差+2.0%  対抗10.9%",
                       "size": "xs",
                       "color": "#bbbbbb",
                       "margin": "xs",
@@ -756,7 +722,7 @@
                     },
                     {
                       "type": "text",
-                      "text": "20.3%  差+5.7%  対抗14.6%",
+                      "text": "11.5%  差+0.1%  対抗11.4%",
                       "size": "xs",
                       "color": "#bbbbbb",
                       "margin": "xs",
@@ -792,14 +758,14 @@
                   "contents": [
                     {
                       "type": "text",
-                      "text": "△ 4 パーヴォ",
+                      "text": "△ 5 デルマフジ",
                       "size": "sm",
                       "color": "#999999",
                       "wrap": true
                     },
                     {
                       "type": "text",
-                      "text": "19.1%  差+3.6%  対抗15.5%",
+                      "text": "15.0%  差+4.0%  対抗11.0%",
                       "size": "xs",
                       "color": "#bbbbbb",
                       "margin": "xs",
@@ -835,14 +801,14 @@
                   "contents": [
                     {
                       "type": "text",
-                      "text": "△ 8 ケイアイアマゾン",
+                      "text": "△ 9 セルジュバローズ",
                       "size": "sm",
                       "color": "#999999",
                       "wrap": true
                     },
                     {
                       "type": "text",
-                      "text": "21.6%  差+0.1%  対抗21.5%",
+                      "text": "16.4%  差+2.0%  対抗14.4%",
                       "size": "xs",
                       "color": "#bbbbbb",
                       "margin": "xs",
@@ -878,14 +844,14 @@
                   "contents": [
                     {
                       "type": "text",
-                      "text": "△ 8 ドルチェリターン",
+                      "text": "△ 3 エボルヴィング",
                       "size": "sm",
                       "color": "#999999",
                       "wrap": true
                     },
                     {
                       "type": "text",
-                      "text": "16.7%  差+1.5%  対抗15.2%",
+                      "text": "21.8%  差+7.3%  対抗14.5%",
                       "size": "xs",
                       "color": "#bbbbbb",
                       "margin": "xs",
@@ -928,7 +894,7 @@
                     },
                     {
                       "type": "text",
-                      "text": "18.7%  差+0.7%  対抗18.0%",
+                      "text": "23.4%  差+3.4%  対抗20.0%",
                       "size": "xs",
                       "color": "#bbbbbb",
                       "margin": "xs",
@@ -964,14 +930,14 @@
                   "contents": [
                     {
                       "type": "text",
-                      "text": "△ 9 フェアリーライク",
+                      "text": "△ 10 ホウオウトランプ",
                       "size": "sm",
                       "color": "#999999",
                       "wrap": true
                     },
                     {
                       "type": "text",
-                      "text": "22.1%  差+1.6%  対抗20.5%",
+                      "text": "19.0%  差+7.6%  対抗11.3%",
                       "size": "xs",
                       "color": "#bbbbbb",
                       "margin": "xs",
@@ -1007,14 +973,14 @@
                   "contents": [
                     {
                       "type": "text",
-                      "text": "△ 9 ローズカリス",
+                      "text": "△ 12 サマーゲール",
                       "size": "sm",
                       "color": "#999999",
                       "wrap": true
                     },
                     {
                       "type": "text",
-                      "text": "20.7%  差+0.5%  対抗20.2%",
+                      "text": "16.0%  差+2.6%  対抗13.4%",
                       "size": "xs",
                       "color": "#bbbbbb",
                       "margin": "xs",
@@ -1050,14 +1016,14 @@
                   "contents": [
                     {
                       "type": "text",
-                      "text": "△ 13 スカイハイ",
+                      "text": "△ 18 ミルテンベルク",
                       "size": "sm",
                       "color": "#999999",
                       "wrap": true
                     },
                     {
                       "type": "text",
-                      "text": "13.0%  差+1.3%  対抗11.8%",
+                      "text": "14.7%  差+0.4%  対抗14.3%",
                       "size": "xs",
                       "color": "#bbbbbb",
                       "margin": "xs",
@@ -1075,15 +1041,14 @@
               "layout": "horizontal",
               "paddingStart": "14px",
               "paddingEnd": "14px",
-              "paddingTop": "9px",
-              "paddingBottom": "9px",
+              "paddingTop": "7px",
+              "paddingBottom": "7px",
               "contents": [
                 {
                   "type": "text",
                   "text": "11R",
                   "size": "sm",
-                  "weight": "bold",
-                  "color": "#7a5500",
+                  "color": "#999999",
                   "flex": 0
                 },
                 {
@@ -1094,49 +1059,16 @@
                   "contents": [
                     {
                       "type": "text",
-                      "text": "○5 ショウヘイ（単・複）",
+                      "text": "△ 5 ショウヘイ",
                       "size": "sm",
-                      "weight": "bold",
-                      "color": "#7a5500",
+                      "color": "#999999",
                       "wrap": true
                     },
                     {
                       "type": "text",
-                      "text": "21.6%  差+6.0%  対抗15.6%",
+                      "text": "16.7%  差+1.2%  対抗15.5%",
                       "size": "xs",
-                      "color": "#888888",
-                      "margin": "xs",
-                      "wrap": true
-                    },
-                    {
-                      "type": "text",
-                      "text": "馬連: 5-15 / 13 / 4",
-                      "size": "xs",
-                      "color": "#555555",
-                      "margin": "xs",
-                      "wrap": true
-                    },
-                    {
-                      "type": "text",
-                      "text": "馬単: 5→15 / 5→13 / 5→4",
-                      "size": "xs",
-                      "color": "#7a5500",
-                      "margin": "xs",
-                      "wrap": true
-                    },
-                    {
-                      "type": "text",
-                      "text": "3連複: 5-15-13 / 5-15-4 / 5-15-7 / 5-15-12 / 5-13-4",
-                      "size": "xs",
-                      "color": "#4a4a8a",
-                      "margin": "xs",
-                      "wrap": true
-                    },
-                    {
-                      "type": "text",
-                      "text": "3連単: 5→15→13 / 5→15→4 / 5→15→7 / 5→15→12 / 5→13→15",
-                      "size": "xs",
-                      "color": "#7a3a3a",
+                      "color": "#bbbbbb",
                       "margin": "xs",
                       "wrap": true
                     }
@@ -1152,15 +1084,14 @@
               "layout": "horizontal",
               "paddingStart": "14px",
               "paddingEnd": "14px",
-              "paddingTop": "9px",
-              "paddingBottom": "9px",
+              "paddingTop": "7px",
+              "paddingBottom": "7px",
               "contents": [
                 {
                   "type": "text",
                   "text": "12R",
                   "size": "sm",
-                  "weight": "bold",
-                  "color": "#1a5533",
+                  "color": "#999999",
                   "flex": 0
                 },
                 {
@@ -1171,49 +1102,16 @@
                   "contents": [
                     {
                       "type": "text",
-                      "text": "◎16 ルークススペイ（単・複）",
+                      "text": "△ 16 ルークススペイ",
                       "size": "sm",
-                      "weight": "bold",
-                      "color": "#1a5533",
+                      "color": "#999999",
                       "wrap": true
                     },
                     {
                       "type": "text",
-                      "text": "26.3%  差+8.2%  対抗18.1%",
+                      "text": "26.2%  差+3.3%  対抗23.0%",
                       "size": "xs",
-                      "color": "#888888",
-                      "margin": "xs",
-                      "wrap": true
-                    },
-                    {
-                      "type": "text",
-                      "text": "馬連: 16-14 / 15 / 5",
-                      "size": "xs",
-                      "color": "#555555",
-                      "margin": "xs",
-                      "wrap": true
-                    },
-                    {
-                      "type": "text",
-                      "text": "馬単: 16→14 / 16→15 / 16→5",
-                      "size": "xs",
-                      "color": "#7a5500",
-                      "margin": "xs",
-                      "wrap": true
-                    },
-                    {
-                      "type": "text",
-                      "text": "3連複: 16-14-13 / 16-14-15 / 16-14-4 / 16-15-5 / 16-15-13",
-                      "size": "xs",
-                      "color": "#4a4a8a",
-                      "margin": "xs",
-                      "wrap": true
-                    },
-                    {
-                      "type": "text",
-                      "text": "3連単: 16→14→15 / 16→14→5 / 16→14→13 / 16→14→4 / 16→15→14",
-                      "size": "xs",
-                      "color": "#7a3a3a",
+                      "color": "#bbbbbb",
                       "margin": "xs",
                       "wrap": true
                     }
@@ -1234,7 +1132,7 @@
           "contents": [
             {
               "type": "text",
-              "text": "◎1R  ○1R  △10R  計12R",
+              "text": "◎0R  ○0R  △12R  計12R",
               "size": "xs",
               "color": "#888888",
               "align": "center"
