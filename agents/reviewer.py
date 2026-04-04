@@ -134,7 +134,7 @@ class Reviewer(AgentBase):
             if label and "単勝" in label.get_text():
                 try:
                     num_cell = cells[0].get_text(strip=True)
-                    pay_cell = cells[1].get_text(strip=True).replace(",", "")
+                    pay_cell = cells[1].get_text(strip=True).replace(",", "").replace("円", "")
                     tansho_ret = int(pay_cell)
                     tansho_winner = num_cell
                 except Exception:
