@@ -51,6 +51,7 @@ class DataMaster(AgentBase):
             "accuracy_summary": self._accuracy_summary(target_date),
             "venue_accuracy": self._venue_accuracy(target_date),
             "mark_accuracy": self._mark_accuracy(target_date),
+            "skip_reason_summary": self._skip_reason_summary(target_date),
             "feature_importance": self._feature_importance_summary(),
             "data_health": self._data_health(),
         }
@@ -177,6 +178,40 @@ class DataMaster(AgentBase):
         return result
 
     # ------------------------------------------------------------------ #
+    # 見送り理由サマリー（直近8週）
+    # ------------------------------------------------------------------ #
+
+    def _skip_reason_summary(self, target_date: date) -> dict:
+        """
+        直近8週の見送り理由コードを集計して返す。
+        skip_reason 列がない旧ログでもエラーにならないよう対応。
+        """
+        df = self._load_log()
+        if df.empty or "skip_reason" not in df.columns:
+            return {}
+
+        cutoff = pd.Timestamp(target_date) - timedelta(weeks=LOOKBACK_WEEKS)
+        recent = df[df["date"] >= cutoff].copy()
+        skipped = recent[recent["is_buy"] != True]
+        if skipped.empty:
+            return {}
+
+        total_skipped = len(skipped)
+        # skip_reason を "+" で分割して個別カウント
+        from collections import Counter
+        counter: Counter = Counter()
+        for reason_str in skipped["skip_reason"].fillna("unknown"):
+            for part in str(reason_str).split("+"):
+                part = part.strip()
+                if part:
+                    counter[part] += 1
+
+        return {
+            "total_skipped": total_skipped,
+            "reason_counts": dict(counter.most_common()),
+        }
+
+    # ------------------------------------------------------------------ #
     # 特徴量重要度サマリー
     # ------------------------------------------------------------------ #
 
@@ -264,6 +299,25 @@ class DataMaster(AgentBase):
             lines.append("【会場別単勝的中率 Top3】")
             for v, d in top_venues:
                 lines.append(f"  {v}: {d['hit_rate']:.1%} ({d['races']}R)")
+
+        # 見送り理由サマリー
+        skip_summary = ctx.get("skip_reason_summary", {})
+        reason_counts = skip_summary.get("reason_counts", {})
+        if reason_counts:
+            total_skipped = skip_summary.get("total_skipped", 0)
+            REASON_LABEL = {
+                "maiden": "新馬・未勝利除外",
+                "prob":   "確率閾値未達",
+                "gap":    "信頼度差不足",
+                "ev":     "EV閾値未達",
+                "unknown": "理由不明",
+            }
+            lines.append("")
+            lines.append(f"【見送り理由（直近8週, {total_skipped}R）】")
+            for code, cnt in list(reason_counts.items())[:4]:
+                label = REASON_LABEL.get(code, code)
+                pct = cnt / total_skipped if total_skipped else 0
+                lines.append(f"  {label}: {cnt}R ({pct:.0%})")
 
         return "\n".join(lines)
 

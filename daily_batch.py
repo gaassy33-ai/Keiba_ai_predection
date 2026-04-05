@@ -172,6 +172,7 @@ PREDICTIONS_LOG = ROOT / "docs" / "predictions_log.csv"
 PREDICTIONS_LOG_COLS = [
     "date", "race_id", "race_name", "honmei_num", "honmei_name",
     "honmei_prob", "taikou_prob", "gap", "mark", "is_buy",
+    "skip_reason",        # 見送り理由コード (maiden/prob/gap/ev/multi/空文字=買い)
     "tansho_hit", "tansho_ret",
     "umatan_str", "umatan_hit", "umatan_ret",
 ]
@@ -195,6 +196,20 @@ def _save_prediction_log(
             um_str = ",".join(
                 f"{hon}\u2192{p}" for p in r.get("umatan_partners", [])
             )
+            # 見送り理由コード（is_buy=True なら空文字）
+            if r["is_buy"]:
+                skip_reason = ""
+            else:
+                reasons = []
+                if r.get("is_maiden"):
+                    reasons.append("maiden")
+                if r.get("skip_prob"):
+                    reasons.append("prob")
+                if r.get("skip_gap"):
+                    reasons.append("gap")
+                if r.get("skip_ev"):
+                    reasons.append("ev")
+                skip_reason = "+".join(reasons) if reasons else "unknown"
             rows.append({
                 "date":         str(target_date),
                 "race_id":      r["race_id"],
@@ -206,6 +221,7 @@ def _save_prediction_log(
                 "gap":          r.get("gap", ""),
                 "mark":         r.get("mark", "△"),
                 "is_buy":       r["is_buy"],
+                "skip_reason":  skip_reason,
                 "tansho_hit":   "",
                 "tansho_ret":   "",
                 "umatan_str":   um_str,
@@ -221,6 +237,9 @@ def _save_prediction_log(
 
     if PREDICTIONS_LOG.exists():
         existing = pd.read_csv(PREDICTIONS_LOG, dtype=str)
+        # 旧バージョン互換: skip_reason 列がなければ空文字で補完
+        if "skip_reason" not in existing.columns:
+            existing.insert(existing.columns.get_loc("is_buy") + 1, "skip_reason", "")
         # 当日分を削除して新データで上書き
         existing = existing[existing["date"] != str(target_date)]
         combined = pd.concat([existing, new_df], ignore_index=True)
@@ -924,6 +943,32 @@ def main() -> None:
 
     # ── 4.5 予測ログ保存（結果は後で週次バッチが更新）────────────
     _save_prediction_log(target_date, venue_results)
+
+    # 買い対象0件の場合: 見送り理由サマリーをログに出力
+    all_results = [r for results in venue_results.values() for r in results if r is not None]
+    buy_count   = sum(1 for r in all_results if r.get("is_buy"))
+    if buy_count == 0 and all_results:
+        from collections import Counter
+        reason_counter: Counter = Counter()
+        for r in all_results:
+            if r.get("is_maiden"):
+                reason_counter["maiden（新馬・未勝利）"] += 1
+            if r.get("skip_prob"):
+                reason_counter[f"prob（最高確率={r['honmei_prob']:.1%} < 閾値{r.get('prob_threshold', MIN_HONMEI_PROB):.1%}）"] += 1
+            if r.get("skip_gap"):
+                reason_counter[f"gap（信頼度差={r.get('gap', 0):.3f} < {MIN_CONFIDENCE_GAP}）"] += 1
+            if r.get("skip_ev"):
+                reason_counter["ev（EV閾値未達）"] += 1
+        logger.warning(f"  ⚠️  本日の買い対象: 0件（全{len(all_results)}R を見送り）")
+        logger.warning("  見送り理由内訳:")
+        for reason, cnt in reason_counter.most_common():
+            logger.warning(f"    {reason}: {cnt}R")
+        # 最高確率レースを1件表示（デバッグ用）
+        top_race = max(all_results, key=lambda r: r.get("honmei_prob", 0))
+        logger.warning(
+            f"  本日の最高予測確率レース: {top_race.get('race_name', '')} "
+            f"({top_race.get('honmei_name', '')} {top_race.get('honmei_prob', 0):.1%})"
+        )
 
     # ── 5. Flex Message 構築・送信 ──────────────────────────────
     logger.info("[5/5] Flex Message 構築・送信")
