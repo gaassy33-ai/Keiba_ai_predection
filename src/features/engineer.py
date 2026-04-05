@@ -68,18 +68,32 @@ class FeatureEngineer:
         # タイムを秒に変換 (例: "1:34.5" → 94.5)
         df["finish_time_sec"] = df["finish_time"].apply(self._time_to_seconds)
 
-        # カラムずれ修正: scraper が列インデックスをずらして保存したため
-        #   "last_3f" 列 → 実際の単勝オッズ (例: 1.4 倍)
-        #   "odds"    列 → 実際の上がり3Fタイム (例: 37.3 秒)
-        # recent_avg_last3f には正しい上がり3F を使う
-        if "odds" in df.columns:
-            df["last_3f_num"] = pd.to_numeric(df["odds"], errors="coerce")
-        else:
-            df["last_3f_num"] = pd.to_numeric(df["last_3f"], errors="coerce")
-
-        # 実際の単勝オッズ（カラムずれにより "last_3f" 列に格納）
+        # 上がり3F（last_3f 列に正しく格納）
+        # ※ 2024年以前のスクレイパーバグで odds/last_3f が逆転したデータが
+        #   残っている場合は再収集が必要。スクレイパーは修正済み。
         if "last_3f" in df.columns:
-            df["tansho_odds_num"] = pd.to_numeric(df["last_3f"], errors="coerce")
+            df["last_3f_num"] = pd.to_numeric(df["last_3f"], errors="coerce")
+        else:
+            df["last_3f_num"] = np.nan
+
+        # 単勝オッズ（odds 列に正しく格納）
+        if "odds" in df.columns:
+            df["tansho_odds_num"] = pd.to_numeric(df["odds"], errors="coerce")
+
+        # 馬体重の数値化（例: "480(+2)" → 480、前走比変化は "(+2)" から取得）
+        if "horse_weight" in df.columns:
+            hw_str = df["horse_weight"].astype(str)
+            # 馬体重本体（3〜4桁整数）
+            df["horse_weight_num"] = pd.to_numeric(
+                hw_str.str.extract(r"^(\d{3,4})")[0], errors="coerce"
+            )
+            # 前走比体重変化（例: "(+2)" → +2、"(-4)" → -4）
+            df["horse_weight_diff"] = pd.to_numeric(
+                hw_str.str.extract(r"\(([+-]?\d+)\)")[0], errors="coerce"
+            )
+        else:
+            df["horse_weight_num"]  = np.nan
+            df["horse_weight_diff"] = np.nan
 
         # 着差を数値化（前走着差特徴量用）
         if "margin" in df.columns:
@@ -467,6 +481,8 @@ class FeatureEngineer:
             "prev_margin", "prev_last3f_rank_norm",
             "recent_pos_trend", "recent_last3f_trend",
             "prev_race_class_code",
+            "prev_horse_weight",    # ⑤ 前走馬体重 (kg)
+            "horse_weight_change",  # ⑤ 前走比体重変化 (kg差)
         ]
 
         # ── 推論パス: from_stats() でロード済みの統計を使用 ───────────
@@ -531,6 +547,9 @@ class FeatureEngineer:
         # ④ 前走クラスコード
         if "race_class_code_hist" in prev_race.columns:
             prev_cols.append("race_class_code_hist")
+        # ⑤ 前走馬体重（推論時はこの値を使用、当日体重は計量前なので不明）
+        if "horse_weight_num" in prev_race.columns:
+            prev_cols.append("horse_weight_num")
 
         prev_df = prev_race[prev_cols].rename(columns={
             "margin_num": "prev_margin",
@@ -538,7 +557,28 @@ class FeatureEngineer:
             "finish_pos_num": "_prev_pos",
             "last_3f_num": "_prev_3f",
             "race_class_code_hist": "prev_race_class_code",
+            "horse_weight_num": "prev_horse_weight",
         })
+
+        # ⑤ 前々走（rank=2）の馬体重を取得して体重変化を計算
+        prev_prev_race = all_sorted[all_sorted["_recent_rank"] == 2].copy()
+        if "horse_weight_num" in prev_prev_race.columns:
+            pp_weight = prev_prev_race[["horse_id", "horse_weight_num"]].rename(
+                columns={"horse_weight_num": "_pp_weight"}
+            )
+            weight_change_base = prev_df[["horse_id"] + (["prev_horse_weight"] if "prev_horse_weight" in prev_df.columns else [])].merge(
+                pp_weight, on="horse_id", how="left"
+            )
+            if "prev_horse_weight" in weight_change_base.columns and "_pp_weight" in weight_change_base.columns:
+                weight_change_base["horse_weight_change"] = (
+                    pd.to_numeric(weight_change_base["prev_horse_weight"], errors="coerce")
+                    - pd.to_numeric(weight_change_base["_pp_weight"], errors="coerce")
+                )
+            else:
+                weight_change_base["horse_weight_change"] = np.nan
+            weight_change_df = weight_change_base[["horse_id", "horse_weight_change"]]
+        else:
+            weight_change_df = pd.DataFrame({"horse_id": prev_df["horse_id"], "horse_weight_change": np.nan})
 
         # ③ 直近2-5走の平均（トレンド基準）
         rest = all_sorted[all_sorted["_recent_rank"].between(2, 5)]
@@ -566,6 +606,7 @@ class FeatureEngineer:
         df = df.merge(prev_df.drop(columns=[c for c in ["_prev_pos", "_prev_3f"] if c in prev_df.columns]),
                       on="horse_id", how="left")
         df = df.merge(trend_df, on="horse_id", how="left")
+        df = df.merge(weight_change_df, on="horse_id", how="left")
 
         # 存在しない列を NaN で埋める
         for c in COLS:
@@ -850,6 +891,9 @@ class FeatureEngineer:
                 prev_cols.append(_tc)
         if "race_class_code_hist" in prev_race.columns:
             prev_cols.append("race_class_code_hist")
+        # ⑤ 前走馬体重
+        if "horse_weight_num" in prev_race.columns:
+            prev_cols.append("horse_weight_num")
 
         prev_df = prev_race[prev_cols].rename(columns={
             "margin_num": "prev_margin",
@@ -857,7 +901,28 @@ class FeatureEngineer:
             "finish_pos_num": "_prev_pos",
             "last_3f_num": "_prev_3f",
             "race_class_code_hist": "prev_race_class_code",
+            "horse_weight_num": "prev_horse_weight",
         })
+
+        # ⑤ 前々走（rank=2）の馬体重から体重変化を計算
+        prev_prev_inf = all_sorted_inf[all_sorted_inf["_recent_rank"] == 2].copy()
+        if "horse_weight_num" in prev_prev_inf.columns:
+            pp_wt_inf = prev_prev_inf[["horse_id", "horse_weight_num"]].rename(
+                columns={"horse_weight_num": "_pp_weight"}
+            )
+            wt_base = prev_df[["horse_id"] + (["prev_horse_weight"] if "prev_horse_weight" in prev_df.columns else [])].merge(
+                pp_wt_inf, on="horse_id", how="left"
+            )
+            if "prev_horse_weight" in wt_base.columns and "_pp_weight" in wt_base.columns:
+                wt_base["horse_weight_change"] = (
+                    pd.to_numeric(wt_base["prev_horse_weight"], errors="coerce")
+                    - pd.to_numeric(wt_base["_pp_weight"], errors="coerce")
+                )
+            else:
+                wt_base["horse_weight_change"] = np.nan
+            wt_change_inf = wt_base[["horse_id", "horse_weight_change"]]
+        else:
+            wt_change_inf = pd.DataFrame({"horse_id": prev_df["horse_id"], "horse_weight_change": np.nan})
 
         # ③ トレンド計算
         rest_inf = all_sorted_inf[all_sorted_inf["_recent_rank"].between(2, 5)]
@@ -883,9 +948,11 @@ class FeatureEngineer:
         drop_tmp = [c for c in ["_prev_pos", "_prev_3f"] if c in prev_df.columns]
         result = agg.merge(prev_df.drop(columns=drop_tmp), on="horse_id", how="left")
         result = result.merge(trend_df_inf, on="horse_id", how="left")
+        result = result.merge(wt_change_inf, on="horse_id", how="left")
 
         for c in ("prev_margin", "prev_last3f_rank_norm", "prev_race_class_code",
-                  "recent_pos_trend", "recent_last3f_trend"):
+                  "recent_pos_trend", "recent_last3f_trend",
+                  "prev_horse_weight", "horse_weight_change"):
             if c not in result.columns:
                 result[c] = np.nan
         logger.info(f"Horse recent form computed: {len(result):,} horses")
@@ -1020,4 +1087,7 @@ class FeatureEngineer:
         "recent_pos_trend",          # ③ 着順トレンド（負=改善, 正=悪化）
         "recent_last3f_trend",       # ③ 上がり3Fトレンド（負=改善）
         "class_change",              # ④ クラス変動（負=降級, 0=同級, 正=昇級）
+        # スクレイパー修正後に追加 (2026-04): 馬体重変化特徴量
+        "prev_horse_weight",         # ⑤ 前走馬体重 (kg)
+        "horse_weight_change",       # ⑤ 前走比体重変化 (kg差、増=正、減=負)
     ]

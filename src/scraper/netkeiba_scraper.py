@@ -160,10 +160,33 @@ class NetkeibaScraper(BaseScraper):
         rows = []
         for tr in table.select("tr")[1:]:  # ヘッダ除外
             tds = tr.select("td")
-            if len(tds) < 18:
+            # 2024年以降、netkeiba は tds[9-13] に有料タイム指数列を追加。
+            # 旧レイアウト（<23列）と新レイアウト（≥23列）を自動判別して取得する。
+            n = len(tds)
+            if n < 15:
                 continue
             horse_link = tds[3].select_one("a")
             jockey_link = tds[6].select_one("a")
+            if n >= 19:
+                # 新レイアウト（2024年〜）: 有料指数5列 (tds[9-13]='**') が追加
+                # tds[14]=通過, tds[15]=上り, tds[16]=単勝, tds[17]=人気,
+                # tds[18]=馬体重, tds[22]=調教師
+                corner_pos  = tds[14].get_text(strip=True)
+                last_3f     = tds[15].get_text(strip=True)
+                odds        = tds[16].get_text(strip=True)
+                popularity  = tds[17].get_text(strip=True)
+                horse_wt    = tds[18].get_text(strip=True)
+                trainer     = tds[22].get_text(strip=True) if n > 22 else ""
+            else:
+                # 旧レイアウト（〜2023年）: 有料指数列なし
+                # tds[10]=通過, tds[11]=上り, tds[12]=単勝, tds[13]=人気,
+                # tds[14]=馬体重, tds[17]=調教師
+                corner_pos  = tds[10].get_text(strip=True)
+                last_3f     = tds[11].get_text(strip=True)
+                odds        = tds[12].get_text(strip=True)
+                popularity  = tds[13].get_text(strip=True)
+                horse_wt    = tds[14].get_text(strip=True) if n > 14 else ""
+                trainer     = tds[17].get_text(strip=True) if n > 17 else ""
             rows.append({
                 "race_id": race_id,
                 "finish_position": tds[0].get_text(strip=True),
@@ -177,12 +200,12 @@ class NetkeibaScraper(BaseScraper):
                 "jockey_name": tds[6].get_text(strip=True),
                 "finish_time": tds[7].get_text(strip=True),
                 "margin": tds[8].get_text(strip=True),
-                "popularity": tds[10].get_text(strip=True),
-                "odds": tds[11].get_text(strip=True),
-                "last_3f": tds[12].get_text(strip=True),
-                "corner_positions": tds[13].get_text(strip=True),
-                "trainer_name": tds[18].get_text(strip=True) if len(tds) > 18 else "",
-                "horse_weight": tds[17].get_text(strip=True) if len(tds) > 17 else "",
+                "corner_positions": corner_pos,
+                "last_3f": last_3f,
+                "odds": odds,
+                "popularity": popularity,
+                "horse_weight": horse_wt,
+                "trainer_name": trainer,
             })
 
         return pd.DataFrame(rows)
@@ -890,10 +913,31 @@ class NetkeibaScraper(BaseScraper):
         if table:
             for tr in table.select("tr")[1:]:
                 tds = tr.select("td")
-                if len(tds) < 18:
+                # 2024年以降、netkeiba は tds[9-13] に有料タイム指数列を追加。
+                # 旧レイアウト（<19列）と新レイアウト（≥19列）を自動判別して取得する。
+                n = len(tds)
+                if n < 15:
                     continue
                 horse_link = tds[3].select_one("a")
                 jockey_link = tds[6].select_one("a")
+                if n >= 19:
+                    # 新レイアウト: tds[14]=通過, tds[15]=上り, tds[16]=単勝,
+                    #               tds[17]=人気, tds[18]=馬体重, tds[22]=調教師
+                    corner_pos = tds[14].get_text(strip=True)
+                    last_3f    = tds[15].get_text(strip=True)
+                    odds       = tds[16].get_text(strip=True)
+                    popularity = tds[17].get_text(strip=True)
+                    horse_wt   = tds[18].get_text(strip=True)
+                    trainer    = tds[22].get_text(strip=True) if n > 22 else ""
+                else:
+                    # 旧レイアウト: tds[10]=通過, tds[11]=上り, tds[12]=単勝,
+                    #               tds[13]=人気, tds[14]=馬体重, tds[17]=調教師
+                    corner_pos = tds[10].get_text(strip=True)
+                    last_3f    = tds[11].get_text(strip=True)
+                    odds       = tds[12].get_text(strip=True)
+                    popularity = tds[13].get_text(strip=True)
+                    horse_wt   = tds[14].get_text(strip=True) if n > 14 else ""
+                    trainer    = tds[17].get_text(strip=True) if n > 17 else ""
                 rows.append({
                     "race_id": race_id,
                     "finish_position": tds[0].get_text(strip=True),
@@ -907,12 +951,12 @@ class NetkeibaScraper(BaseScraper):
                     "jockey_name": tds[6].get_text(strip=True),
                     "finish_time": tds[7].get_text(strip=True),
                     "margin": tds[8].get_text(strip=True),
-                    "popularity": tds[10].get_text(strip=True),
-                    "odds": tds[11].get_text(strip=True),
-                    "last_3f": tds[12].get_text(strip=True),
-                    "corner_positions": tds[13].get_text(strip=True),
-                    "trainer_name": tds[18].get_text(strip=True) if len(tds) > 18 else "",
-                    "horse_weight": tds[17].get_text(strip=True) if len(tds) > 17 else "",
+                    "corner_positions": corner_pos,
+                    "last_3f": last_3f,
+                    "odds": odds,
+                    "popularity": popularity,
+                    "horse_weight": horse_wt,
+                    "trainer_name": trainer,
                     # レースメタをインライン付加（後の join を省略できる）
                     "course_type": meta["course_type"],
                     "distance": meta["distance"],
