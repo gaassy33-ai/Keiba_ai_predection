@@ -117,6 +117,16 @@ class FeatureEngineer:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors="coerce")
 
+        # 障害レース除外: distance=0 or ≥2750m は障害競走のため平地モデルから除外
+        # （distance=0: スクレイパーが障害ページをパース失敗、2750m以上: 障害特有の距離帯）
+        if "distance" in df.columns:
+            dist_num = pd.to_numeric(df["distance"], errors="coerce")
+            df = df[(dist_num > 0) & (dist_num < 2750)].copy()
+
+        # 上がり3F 異常値クレンジング: 60秒超は明らかなスクレイパーパースエラー → NaN化
+        if "last_3f_num" in df.columns:
+            df.loc[df["last_3f_num"] > 60, "last_3f_num"] = np.nan
+
         return df
 
     @staticmethod
@@ -701,7 +711,8 @@ class FeatureEngineer:
             except Exception:
                 venue_code = -1
 
-            if not str(course_type) or distance == 0:
+            # 障害レース除外: course_type 未設定、distance=0、または2750m以上は障害競走
+            if not str(course_type) or distance == 0 or distance >= 2750:
                 continue
 
             wt_col = "weight_carried_num" if "weight_carried_num" in race_entries.columns else "weight_carried"
