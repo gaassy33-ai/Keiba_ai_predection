@@ -49,6 +49,30 @@ ENTRIES_ADJ        = 0.003
 ENTRIES_BASE       = 10
 ENTRIES_CAP        = 0.05
 
+# 季節フィルター（daily_batch.py と同一設定）
+_SEASON_PROB_THRESHOLD: dict[int, float] = {
+    1: 0.38, 2: 0.38, 3: 0.33,
+    4: 0.30, 5: 0.30, 6: 0.30,
+    7: 0.38, 8: 0.38, 9: 0.38,
+    10: 0.33, 11: 0.33, 12: 0.38,
+}
+_SUMMER_DIRT_SKIP_MONTHS = {7, 8, 9}
+_MARK_O_SKIP_MONTHS      = {1, 2, 10}
+_HIGH_VALUE_ODDS_MIN     = 8.0
+_HIGH_VALUE_ODDS_MAX     = 15.0
+_HIGH_VALUE_EV_THRESHOLD = 0.95
+
+# 案D: 不調期 開催場フィルタ（不調期ROI 0%会場を除外）
+_BAD_SEASON_MONTHS    = {1, 7, 8, 9, 11, 12}
+_BAD_VENUE_SKIP_CODES = {"02", "04", "09"}   # 函館・新潟・阪神（不調期ROI 0%）
+
+# 案E: 不調期 距離フィルタ（1800m以上は見送り）
+_BAD_SEASON_MAX_DISTANCE = 1800
+
+# 案B: 不調期専用モデルの閾値（スケールが全期間モデルと異なるため専用設定）
+_BAD_MODEL_PROB_THRESHOLD = 0.25
+_BAD_MODEL_MARK_STRONG    = 0.28
+
 TEST_RESULTS_CSV = ROOT / "data" / "raw" / "test_results_new.csv"
 TEST_META_CSV    = ROOT / "data" / "raw" / "test_meta_new.csv"
 BACKTEST_OUT     = ROOT / "data" / "processed" / "backtest_29feat.csv"
@@ -124,7 +148,8 @@ def parse_odds(val) -> float:
 
 
 def evaluate(test_results: pd.DataFrame, test_meta: pd.DataFrame,
-             train_results: pd.DataFrame, trainer: ModelTrainer) -> pd.DataFrame:
+             train_results: pd.DataFrame, trainer: ModelTrainer,
+             bad_season_trainer: ModelTrainer | None = None) -> pd.DataFrame:
     """時系列ルックバックでレースごとに予測・評価"""
 
     # 学習データと統合（ルックバック用）
@@ -144,12 +169,16 @@ def evaluate(test_results: pd.DataFrame, test_meta: pd.DataFrame,
     test_meta = test_meta.sort_values("race_date").dropna(subset=["race_date"])
 
     # full_history にも race_date を付与
+    # ※ race_id[4:6] は会場コード（月ではない）のため、train_meta.csv の正しい race_date を使用
     date_map = test_meta.set_index("race_id")["race_date"].to_dict()
-    train_date_map = {
-        rid: pd.Timestamp(f"{rid[:4]}-{rid[4:6]}-{rid[6:8]}")
-        for rid in train_results["race_id"].unique()
-        if len(rid) >= 8
-    }
+    try:
+        train_meta = pd.read_csv("data/raw/train_meta.csv", dtype=str)
+        train_meta["race_date"] = pd.to_datetime(train_meta["race_date"], errors="coerce")
+        train_date_map = train_meta.dropna(subset=["race_date"]).set_index("race_id")["race_date"].to_dict()
+        logger.info(f"  train_meta race_date loaded: {len(train_date_map):,} races")
+    except Exception as e:
+        logger.warning(f"train_meta.csv の race_date 読み込み失敗: {e} → race_id ソート順で代替")
+        train_date_map = {}
     date_map.update(train_date_map)
     fe_base.history["race_date"] = fe_base.history["race_id"].map(date_map)
 
@@ -215,12 +244,22 @@ def evaluate(test_results: pd.DataFrame, test_meta: pd.DataFrame,
             continue
 
         # 予測
+        # 買い条件判定（daily_batch.py と同一ロジック）
+        race_month = race_date.month  # race_dateから月を取得（race_idの4:6は場コード）
+
+        # 不調期専用モデルに切り替え（予測前に決定）
+        active_trainer = (
+            bad_season_trainer
+            if bad_season_trainer is not None and race_month in _BAD_SEASON_MONTHS
+            else trainer
+        )
+
         X = (feat_df[FeatureEngineer.FEATURE_COLUMNS]
              .apply(pd.to_numeric, errors="coerce")
              .fillna(0))
-        win_probs = trainer.model.predict(X, num_threads=1)
-        if trainer.place_model is not None:
-            place_probs = trainer.place_model.predict(X, num_threads=1)
+        win_probs = active_trainer.model.predict(X, num_threads=1)
+        if active_trainer.place_model is not None:
+            place_probs = active_trainer.place_model.predict(X, num_threads=1)
             probs = 0.7 * win_probs + 0.3 * place_probs
         else:
             probs = win_probs
@@ -234,9 +273,15 @@ def evaluate(test_results: pd.DataFrame, test_meta: pd.DataFrame,
         gap         = honmei_prob - taikou_prob
         n_entries   = len(race_entries)
 
-        # 買い条件判定（daily_batch.py と同一ロジック）
-        entries_adj    = min(max(0, n_entries - ENTRIES_BASE) * ENTRIES_ADJ, ENTRIES_CAP)
-        prob_threshold = MIN_HONMEI_PROB + entries_adj
+        using_bad_model = (bad_season_trainer is not None and race_month in _BAD_SEASON_MONTHS)
+        if using_bad_model:
+            prob_threshold = _BAD_MODEL_PROB_THRESHOLD
+            mark_strong    = _BAD_MODEL_MARK_STRONG
+        else:
+            season_base    = _SEASON_PROB_THRESHOLD.get(race_month, MIN_HONMEI_PROB)
+            entries_adj    = min(max(0, n_entries - ENTRIES_BASE) * ENTRIES_ADJ, ENTRIES_CAP)
+            prob_threshold = season_base + entries_adj
+            mark_strong    = MARK_STRONG_PROB
         is_maiden      = any(k in race_name for k in MAIDEN_KEYWORDS)
 
         # EVフィルタ
@@ -246,20 +291,44 @@ def evaluate(test_results: pd.DataFrame, test_meta: pd.DataFrame,
             raw_odds   = odds_col.get(honmei_id)
             honmei_odds_val = float(raw_odds) if raw_odds is not None else float("nan")
             honmei_ev  = honmei_prob * honmei_odds_val if not np.isnan(honmei_odds_val) else float("nan")
-            ev_ok      = np.isnan(honmei_ev) or honmei_ev >= EV_THRESHOLD
+            # 8〜15倍のとき EV 閾値を緩和
+            if (not np.isnan(honmei_odds_val)
+                    and _HIGH_VALUE_ODDS_MIN <= honmei_odds_val <= _HIGH_VALUE_ODDS_MAX):
+                ev_thr = _HIGH_VALUE_EV_THRESHOLD
+            else:
+                ev_thr = EV_THRESHOLD
+            ev_ok  = np.isnan(honmei_ev) or honmei_ev >= ev_thr
         else:
             honmei_ev  = float("nan")
             ev_ok      = True
 
-        gap_ok  = gap >= MIN_CONFIDENCE_GAP
-        is_buy  = (not is_maiden) and gap_ok and (honmei_prob >= prob_threshold) and ev_ok
+        # 夏ダート除外
+        is_summer_dirt = (race_month in _SUMMER_DIRT_SKIP_MONTHS and course_type == "ダート")
 
-        if is_buy and honmei_prob >= MARK_STRONG_PROB:
+        # 案D: 不調期の開催場フィルタ
+        jyo_code = str(race_id)[4:6]
+        is_bad_venue = (race_month in _BAD_SEASON_MONTHS and jyo_code in _BAD_VENUE_SKIP_CODES)
+
+        # 案E: 不調期の距離フィルタ
+        is_bad_distance = (race_month in _BAD_SEASON_MONTHS and distance >= _BAD_SEASON_MAX_DISTANCE)
+
+        # 案F: 不調期は複勝メイン
+        bet_mode = "複勝" if race_month in _BAD_SEASON_MONTHS else "単勝"
+
+        gap_ok  = gap >= MIN_CONFIDENCE_GAP
+        is_buy  = (not is_maiden) and gap_ok and (honmei_prob >= prob_threshold) and ev_ok and (not is_summer_dirt) and (not is_bad_venue) and (not is_bad_distance)
+
+        if is_buy and honmei_prob >= mark_strong:
             mark = "◎"
         elif is_buy:
             mark = "○"
         else:
             mark = "△"
+
+        # 月別マーク制限（○見送り月）
+        if mark == "○" and race_month in _MARK_O_SKIP_MONTHS:
+            mark = "△"
+            is_buy = False
 
         # 実際の着順・オッズ
         actual = race_entries[["horse_id","finish_position","odds"]].copy()
@@ -296,6 +365,7 @@ def evaluate(test_results: pd.DataFrame, test_meta: pd.DataFrame,
             "honmei_win":     honmei_win,
             "honmei_place":   honmei_place,
             "honmei_return":  honmei_ret,
+            "bet_mode":       bet_mode,
         })
 
         if (i + 1) % 200 == 0:
@@ -423,9 +493,16 @@ def main():
     trainer = ModelTrainer.load(settings.model_path)
     logger.info(f"  モデル特徴量数: {trainer.model.num_feature()}")
 
+    # 不調期専用モデル（存在すれば読み込む）
+    _bad_model_path = ROOT / "data" / "models" / "lgbm_model_bad_season.pkl"
+    bad_season_trainer: ModelTrainer | None = None
+    if _bad_model_path.exists():
+        bad_season_trainer = ModelTrainer.load(_bad_model_path)
+        logger.info(f"  不調期専用モデル読み込み完了")
+
     # Step 4: バックテスト評価
     logger.info("[3/3] バックテスト評価")
-    result_df = evaluate(test_results, test_meta, train_results, trainer)
+    result_df = evaluate(test_results, test_meta, train_results, trainer, bad_season_trainer)
 
     # 保存
     BACKTEST_OUT.parent.mkdir(parents=True, exist_ok=True)

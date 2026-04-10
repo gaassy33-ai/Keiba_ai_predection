@@ -60,6 +60,47 @@ ENTRIES_THRESHOLD_CAP  = 0.05
 # 改善③: レースクラス別ブースト（未勝利・新馬は+5%上乗せ）
 MAIDEN_PROB_BOOST    = 0.05
 MAIDEN_KEYWORDS      = ("新馬", "未勝利")
+
+# ======================================================================
+# 季節フィルター設定
+# バックテスト(2024-2025年)分析に基づく季節別買い条件の動的変更
+# ======================================================================
+# 案①: 季節別 確率閾値
+#   好調期(4-6月)  : ROI160%  → 現状維持 (0.30)
+#   中間期(3,10,11月): ROI81%  → やや絞り込み (0.33)
+#   不調期(その他)  : ROI68%  → 厳格化 (0.38)
+_SEASON_PROB_THRESHOLD: dict[int, float] = {
+    1: 0.38, 2: 0.38,                    # 不調期
+    3: 0.33,                              # 中間期
+    4: 0.30, 5: 0.30, 6: 0.30,           # 好調期
+    7: 0.38, 8: 0.38, 9: 0.38,           # 不調期
+    10: 0.33, 11: 0.33,                  # 中間期
+    12: 0.38,                             # 不調期
+}
+
+# 案②: 夏ダート除外 (7-9月のダートはROI12-61%と極端に低い)
+_SUMMER_DIRT_SKIP_MONTHS = {7, 8, 9}    # この月のダートレースは見送り
+
+# 案③: 月別マーク制限 (◎のみ or ○も買う)
+#   ○を見送る月: 10月(○ROI 0%)、2月(○ROI 38%)、1月(○ROI 39%)
+_MARK_O_SKIP_MONTHS = {1, 2, 10}        # この月は○(低確率◎)を見送り、◎のみ
+
+# 案④: オッズ帯別 EV 閾値緩和
+#   8〜15倍のとき EV閾値を緩和して拾いやすくする（ROI164%）
+_HIGH_VALUE_ODDS_MIN = 8.0
+_HIGH_VALUE_ODDS_MAX = 15.0
+_HIGH_VALUE_EV_THRESHOLD = 0.95         # 通常1.05 → 8-15倍のとき0.95に緩和
+
+# 案D: 不調期 開催場フィルタ（不調期ROI 0%会場を除外）
+_BAD_SEASON_MONTHS    = {1, 7, 8, 9, 11, 12}
+_BAD_VENUE_SKIP_CODES = {"02", "04", "09"}   # 函館・新潟・阪神（不調期ROI 0%）
+
+# 案E: 不調期 距離フィルタ（1800m以上は見送り）
+_BAD_SEASON_MAX_DISTANCE = 1800
+
+# 案B: 不調期専用モデルの閾値（スケールが全期間モデルと異なるため専用設定）
+_BAD_MODEL_PROB_THRESHOLD = 0.25
+_BAD_MODEL_MARK_STRONG    = 0.28
 EV_PARTNER_TOP_N     = 5      # EV計算の候補プール（上位5頭）
 MAX_BAREN_TICKETS    = 3      # 馬連最大点数
 MAX_UMATAN_TICKETS   = 3      # 馬単最大点数
@@ -209,6 +250,10 @@ def _save_prediction_log(
                     reasons.append("gap")
                 if r.get("skip_ev"):
                     reasons.append("ev")
+                if r.get("skip_venue"):
+                    reasons.append("venue")
+                if r.get("skip_distance"):
+                    reasons.append("distance")
                 skip_reason = "+".join(reasons) if reasons else "unknown"
             rows.append({
                 "date":         str(target_date),
@@ -351,13 +396,27 @@ def predict_and_bet(
     gap = honmei_prob - taikou_prob
     n_entries = len(entries)
 
+    # レース日の月（季節フィルター用）
+    # ※ race_id の 4:6 は競馬場コード（01=札幌等）であり月ではない
+    # race_info.start_datetime または target_date から月を取得する
+    try:
+        race_month = date.today().month  # daily_batch では当日実行が前提
+    except Exception:
+        race_month = date.today().month
+
     # 改善②: 出走頭数に応じた動的閾値（多頭数は確率が薄まるため厳格化）
-    base_threshold = MIN_HONMEI_PROB
-    entries_adj = min(
-        max(0, n_entries - ENTRIES_THRESHOLD_BASE) * ENTRIES_THRESHOLD_ADJ,
-        ENTRIES_THRESHOLD_CAP,
-    )
-    prob_threshold = base_threshold + entries_adj
+    # 季節フィルター①: 月別確率閾値を適用（好調期は0.30、中間期0.33、不調期0.38）
+    # 案B: 不調期専用モデル使用時は専用閾値（確率スケールが異なるため）
+    _using_bad_model = getattr(trainer, "_is_bad_season_model", False)
+    if _using_bad_model:
+        prob_threshold = _BAD_MODEL_PROB_THRESHOLD
+    else:
+        season_base = _SEASON_PROB_THRESHOLD.get(race_month, MIN_HONMEI_PROB)
+        entries_adj = min(
+            max(0, n_entries - ENTRIES_THRESHOLD_BASE) * ENTRIES_THRESHOLD_ADJ,
+            ENTRIES_THRESHOLD_CAP,
+        )
+        prob_threshold = season_base + entries_adj
 
     # 新馬・未勝利戦は除外（バックテスト: ROI35%と低く再現性が低いため）
     is_maiden = any(k in str(race_info.race_name) for k in MAIDEN_KEYWORDS)
@@ -371,15 +430,47 @@ def predict_and_bet(
     honmei_odds_pre = float(_raw_odds) if _raw_odds is not None else float("nan")
     honmei_ev = (honmei_prob * honmei_odds_pre
                  if _raw_odds is not None and not np.isnan(honmei_odds_pre) else float("nan"))
-    # オッズ未取得時（nan）は EV フィルタをスキップして確率フィルタのみ適用
-    ev_ok = (np.isnan(honmei_ev) or honmei_ev >= EV_THRESHOLD)
 
-    if is_maiden or not gap_ok or honmei_prob < prob_threshold or not ev_ok:
+    # 季節フィルター④: 8〜15倍のとき EV 閾値を緩和（ROI164%の高バリューゾーン）
+    if (not np.isnan(honmei_odds_pre)
+            and _HIGH_VALUE_ODDS_MIN <= honmei_odds_pre <= _HIGH_VALUE_ODDS_MAX):
+        ev_threshold = _HIGH_VALUE_EV_THRESHOLD
+    else:
+        ev_threshold = EV_THRESHOLD
+
+    # オッズ未取得時（nan）は EV フィルタをスキップして確率フィルタのみ適用
+    ev_ok = (np.isnan(honmei_ev) or honmei_ev >= ev_threshold)
+
+    # 季節フィルター②: 夏場（7-9月）のダートは見送り（ROI 12-61%と極端に低い）
+    is_summer_dirt = (
+        race_month in _SUMMER_DIRT_SKIP_MONTHS
+        and str(race_info.course_type) == "ダート"
+    )
+
+    # 案D: 不調期の開催場フィルタ（函館・新潟・阪神は不調期ROI 0%）
+    jyo_code_str = str(race_info.race_id)[4:6]
+    is_bad_venue = (race_month in _BAD_SEASON_MONTHS and jyo_code_str in _BAD_VENUE_SKIP_CODES)
+
+    # 案E: 不調期の距離フィルタ（1800m以上は不調期ROI 32%以下）
+    is_bad_distance = (
+        race_month in _BAD_SEASON_MONTHS
+        and int(race_info.distance or 0) >= _BAD_SEASON_MAX_DISTANCE
+    )
+
+    # 案F: 不調期は複勝メイン
+    bet_mode = "複勝" if race_month in _BAD_SEASON_MONTHS else "単勝"
+
+    _mark_strong = _BAD_MODEL_MARK_STRONG if _using_bad_model else MARK_STRONG_PROB
+    if is_maiden or not gap_ok or honmei_prob < prob_threshold or not ev_ok or is_summer_dirt or is_bad_venue or is_bad_distance:
         mark = "△"
-    elif honmei_prob >= MARK_STRONG_PROB:
+    elif honmei_prob >= _mark_strong:
         mark = "◎"
     else:
         mark = "○"
+
+    # 季節フィルター③: 月別マーク制限（○ROIが極端に低い月は◎のみ）
+    if mark == "○" and race_month in _MARK_O_SKIP_MONTHS:
+        mark = "△"
 
     is_skip = (mark == "△")
 
@@ -387,6 +478,10 @@ def predict_and_bet(
         f"  probs: {mark}{pred_df.iloc[0]['horse_name']}={honmei_prob:.4f}"
         f"  対抗={taikou_prob:.4f}  差={gap:.4f}"
         f"  EV={honmei_ev:.2f}({'OK' if ev_ok else 'NG'})"
+        + (f"  [季節フィルター: 夏ダート見送り]" if is_summer_dirt else "")
+        + (f"  [季節フィルター: 不調期会場({jyo_code_str})見送り]" if is_bad_venue else "")
+        + (f"  [季節フィルター: 不調期距離({race_info.distance}m≥1800m)見送り]" if is_bad_distance else "")
+        + (f"  [季節フィルター: {race_month}月○制限]" if mark == "△" and not is_maiden and not is_summer_dirt and not is_bad_venue and not is_bad_distance and gap_ok and honmei_prob >= prob_threshold and ev_ok else "")
     )
 
     honmei_row = pred_df.iloc[0]
@@ -413,7 +508,15 @@ def predict_and_bet(
         "skip_prob":          honmei_prob < prob_threshold,
         "skip_gap":           not gap_ok,
         "skip_ev":            not ev_ok,
+        "skip_summer_dirt":   is_summer_dirt,
+        "skip_venue":         is_bad_venue,
+        "skip_distance":      is_bad_distance,
+        "skip_mark_o":        (mark == "△" and not is_maiden and not is_summer_dirt
+                               and not is_bad_venue and not is_bad_distance
+                               and gap_ok and honmei_prob >= prob_threshold and ev_ok),
         "prob_threshold":     round(prob_threshold, 3),
+        "race_month":         race_month,
+        "bet_mode":           bet_mode,
         "baren_partners":     [],
         "umatan_partners":    [],
         "sanrenfuku_combos":  [],
@@ -661,9 +764,11 @@ def _race_row_component(race_result: dict | None, race_num: int) -> list[dict]:
     sf_color      = "#4a4a8a"
     st_color      = "#7a3a3a"
 
+    bet_mode  = race_result.get("bet_mode", "単勝")
+    bet_label = "複勝メイン" if bet_mode == "複勝" else "単・複"
     detail_items: list[dict] = [
         {"type": "text",
-         "text": f"{mark}{hon_num} {hon_name}（単・複）",
+         "text": f"{mark}{hon_num} {hon_name}（{bet_label}）",
          "size": "sm", "weight": "bold", "color": label_color, "wrap": True},
         {"type": "text", "text": prob_str,
          "size": "xs", "color": "#888888", "margin": "xs", "wrap": True},
@@ -882,6 +987,14 @@ def main() -> None:
     logger.info("[1/5] モデル・FeatureEngineer 読み込み")
     trainer = ModelTrainer.load(settings.model_path, org=org)
 
+    # 不調期専用モデル（存在すれば読み込む）
+    _bad_season_model_path = ROOT / "data" / "models" / "lgbm_model_bad_season.pkl"
+    bad_season_trainer: ModelTrainer | None = None
+    if _bad_season_model_path.exists():
+        bad_season_trainer = ModelTrainer.load(_bad_season_model_path, org=org)
+        bad_season_trainer._is_bad_season_model = True  # 閾値切り替え用フラグ
+        logger.info(f"  不調期専用モデル読み込み完了: {_bad_season_model_path.name}")
+
     # ── 2. FeatureEngineer 構築 ──────────────────────────────────
     logger.info("[2/5] FeatureEngineer 構築（feature_stats.pkl から）")
     fe = FeatureEngineer.from_stats(settings.stats_path)
@@ -921,7 +1034,14 @@ def main() -> None:
                 venue_results[venue].append(None)
                 continue
 
-            result = predict_and_bet(race_info, fe, trainer, org=org)
+            # 不調期（1,7-9,11-12月）は専用モデルを使用
+            _race_month = target_date.month
+            _active_trainer = (
+                bad_season_trainer
+                if bad_season_trainer is not None and _race_month in _BAD_SEASON_MONTHS
+                else trainer
+            )
+            result = predict_and_bet(race_info, fe, _active_trainer, org=org)
             venue_results[venue].append(result)
 
             if result and result["is_buy"]:
@@ -959,6 +1079,10 @@ def main() -> None:
                 reason_counter[f"gap（信頼度差={r.get('gap', 0):.3f} < {MIN_CONFIDENCE_GAP}）"] += 1
             if r.get("skip_ev"):
                 reason_counter["ev（EV閾値未達）"] += 1
+            if r.get("skip_summer_dirt"):
+                reason_counter["季節フィルター: 夏ダート（7-9月）"] += 1
+            if r.get("skip_mark_o"):
+                reason_counter[f"季節フィルター: {r.get('race_month', '')}月は◎のみ（○見送り）"] += 1
         logger.warning(f"  ⚠️  本日の買い対象: 0件（全{len(all_results)}R を見送り）")
         logger.warning("  見送り理由内訳:")
         for reason, cnt in reason_counter.most_common():
