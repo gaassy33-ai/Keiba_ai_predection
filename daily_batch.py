@@ -101,8 +101,7 @@ _BAD_SEASON_MAX_DISTANCE = 1800
 # 案B: 不調期専用モデルの閾値（スケールが全期間モデルと異なるため専用設定）
 _BAD_MODEL_PROB_THRESHOLD = 0.25
 _BAD_MODEL_MARK_STRONG    = 0.28
-EV_PARTNER_TOP_N     = 5      # EV計算の候補プール（モデル上位N頭）
-MKT_PARTNER_TOP_N   = 5      # 市場人気上位N頭も候補に追加（モデル低評価の人気馬を補完）
+EV_PARTNER_TOP_N     = 5      # EV計算の候補プール（上位5頭）
 MAX_BAREN_TICKETS    = 3      # 馬連最大点数
 MAX_UMATAN_TICKETS   = 3      # 馬単最大点数
 MAX_SANRENFUKU_TICKETS = 5    # 3連複最大点数
@@ -545,31 +544,10 @@ def predict_and_bet(
 
     hi = vidx(honmei_row["horse_id"])
 
-    # --- 候補プール: モデル上位N頭 ＋ 市場人気上位N頭（◎除く）---
-    # モデルが低評価でも市場で人気の馬（カムニャック的な馬）を補完するため
-    honmei_hid = str(honmei_row["horse_id"])
-    others_df = pred_df[pred_df["horse_id"] != honmei_hid].copy()
+    # --- モデル上位 EV_PARTNER_TOP_N 頭（◎除く）---
+    partner_rows = pred_df[pred_df["horse_id"] != honmei_row["horse_id"]].head(EV_PARTNER_TOP_N)
 
-    # モデル上位N頭（確率順）
-    model_top_ids = set(others_df.head(EV_PARTNER_TOP_N)["horse_id"].astype(str))
-
-    # 市場人気上位N頭（オッズ低い順）＝ 本命除外・オッズ取得できている馬
-    mkt_ranked = sorted(
-        [(hid, _parse_odds(odds_map.get(hid, float("nan"))))
-         for hid in others_df["horse_id"].astype(str)
-         if not np.isnan(_parse_odds(odds_map.get(hid, float("nan")))) and _parse_odds(odds_map.get(hid, float("nan"))) > 1.0],
-        key=lambda x: x[1]
-    )
-    mkt_top_ids = {hid for hid, _ in mkt_ranked[:MKT_PARTNER_TOP_N]}
-
-    pool_ids = model_top_ids | mkt_top_ids
-    partner_rows = others_df[others_df["horse_id"].astype(str).isin(pool_ids)]
-
-    # --- 馬連: 市場人気順で選択 + EV スコアで残枠埋め ---
-    # 馬券内(2・3着)は市場人気と相関が高いため、人気順を優先
-    # モデルが高確率でも市場オッズが異常に高い馬(ビップデイジー的な馬)が
-    # EV爆発するのを防ぎ、カムニャック的な人気馬を拾う
-    MKT_BAREN_FORCE = MAX_BAREN_TICKETS  # 馬連全枠を市場人気ベースで選択
+    # --- 馬連: EV スコア上位3頭・トリガミ除外 ---
     scored = []
     for _, row in partner_rows.iterrows():
         hid  = str(row["horse_id"])
@@ -577,26 +555,11 @@ def predict_and_bet(
         odds = _parse_odds(odds_map.get(hid, 5.0))
         if np.isnan(odds) or odds <= 1.0:
             odds = 5.0
-        scored.append((hid, prob * odds, str(int(row["horse_number"])), odds))
+        scored.append((hid, prob * odds, str(int(row["horse_number"]))))
+    scored.sort(key=lambda x: x[1], reverse=True)
 
-    # 市場人気上位（オッズ低い順）から優先確保
-    mkt_sorted = sorted(scored, key=lambda x: x[3])   # オッズ低い順
     baren_nums: list[str] = []
-    for hid, _ev, num, odds in mkt_sorted[:MKT_BAREN_FORCE]:
-        vi = vidx(hid)
-        if hi is not None and vi is not None and mkt_probs:
-            e_odds = _est_odds(_prob_quinella(mkt_probs, hi, vi), "馬連", org=org)
-            if e_odds < TORIKAMI_THRESHOLD:
-                continue
-        baren_nums.append(num)
-
-    # 残枠をEVスコア（prob × odds）上位で埋める
-    ev_sorted = sorted(scored, key=lambda x: -x[1])   # EVスコア高い順
-    for hid, _ev, num, _odds in ev_sorted:
-        if len(baren_nums) >= MAX_BAREN_TICKETS:
-            break
-        if num in baren_nums:
-            continue
+    for hid, _ev, num in scored[:MAX_BAREN_TICKETS]:
         vi = vidx(hid)
         if hi is not None and vi is not None and mkt_probs:
             e_odds = _est_odds(_prob_quinella(mkt_probs, hi, vi), "馬連", org=org)
@@ -606,7 +569,7 @@ def predict_and_bet(
 
     # --- 馬単: ◎1着固定 × 上位EV頭 → Harville降順 最大3点 ---
     um_all: list[tuple[str, float]] = []
-    for hid, _ev, num, _odds in scored:
+    for hid, _ev, num in scored:
         vi = vidx(hid)
         if hi is not None and vi is not None and mkt_probs:
             e_od = _est_odds(_harville(mkt_probs, [hi, vi]), "馬単", org=org)
