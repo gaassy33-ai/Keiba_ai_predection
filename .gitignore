@@ -23,6 +23,7 @@ data/models/*.pkl
 data/models/*.bin
 # 学習済みモデル・統計はリポジトリに含める（JRA + NAR）
 !data/models/lgbm_model.pkl
+!data/models/lgbm_model_bad_season.pkl
 !data/models/feature_stats.pkl
 !data/models/nar_lgbm_model.pkl
 !data/models/nar_feature_stats.pkl

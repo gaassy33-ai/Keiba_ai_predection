@@ -983,6 +983,13 @@ def main() -> None:
     logger.info(f"daily_batch 開始: {target_date}  [JRA]")
     logger.info("=" * 60)
 
+    # 二重実行ガード: 当日の flex が既に docs/ に存在する場合はスキップ
+    _docs_flex = ROOT / "docs" / f"flex_{target_date}.json"
+    if _docs_flex.exists() and not args.dry_run:
+        logger.warning(f"  本日分 ({target_date}) の flex が既に存在します: {_docs_flex}")
+        logger.warning("  二重実行を防ぐためスキップします。強制実行は --date を明示してください。")
+        return
+
     # ── 1. モデル・履歴読み込み ──────────────────────────────────
     logger.info("[1/5] モデル・FeatureEngineer 読み込み")
     trainer = ModelTrainer.load(settings.model_path, org=org)
