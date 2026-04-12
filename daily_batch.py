@@ -101,10 +101,10 @@ _BAD_SEASON_MAX_DISTANCE = 1800
 # 案B: 不調期専用モデルの閾値（スケールが全期間モデルと異なるため専用設定）
 _BAD_MODEL_PROB_THRESHOLD = 0.25
 _BAD_MODEL_MARK_STRONG    = 0.28
-EV_PARTNER_TOP_N     = 5      # EV計算の候補プール（上位5頭）
+EV_PARTNER_TOP_N     = 7      # EV計算の候補プール（上位7頭）※5→7に拡張（3連複カバレッジ改善）
 MAX_BAREN_TICKETS    = 3      # 馬連最大点数
 MAX_UMATAN_TICKETS   = 3      # 馬単最大点数
-MAX_SANRENFUKU_TICKETS = 5    # 3連複最大点数
+MAX_SANRENFUKU_TICKETS = 7    # 3連複最大点数 ※5→7に拡張
 MAX_SANRENTAN_TICKETS  = 5    # 3連単最大点数
 TORIKAMI_THRESHOLD   = 1.05   # トリガミ判定閾値（推定オッズがこれ未満は除外）
 
