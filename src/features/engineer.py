@@ -828,14 +828,31 @@ class FeatureEngineer:
     # 統計データの保存・読み込み（推論時に使用）
     # ------------------------------------------------------------------
 
-    def save_stats(self, path: Path | str) -> None:
-        """集計統計をファイルに保存する（学習後に呼び出す）。"""
+    def save_stats(self, path: Path | str, extra_history_df: pd.DataFrame | None = None) -> None:
+        """集計統計をファイルに保存する（学習後に呼び出す）。
+
+        Args:
+            extra_history_df: horse_recent_form 計算のみに使う追加履歴
+                              (例: test_results_new.csv)。モデル学習データとは独立。
+        """
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
 
-        # 改善バグ修正: 推論時の recent_avg_pos 等 NaN 問題の解消
-        # 馬別直近成績（horse_id → recent_avg_pos 等）を計算して保存
-        horse_recent_form = self._compute_horse_recent_form_for_inference()
+        # 馬別直近成績: extra_history_df が渡された場合は合算して計算
+        if extra_history_df is not None and not extra_history_df.empty:
+            extra_preprocessed = self._preprocess_history(extra_history_df)
+            combined = pd.concat([self.history, extra_preprocessed], ignore_index=True)
+            # 重複除去（同一 race_id × horse_id）
+            if "race_id" in combined.columns and "horse_id" in combined.columns:
+                combined = combined.drop_duplicates(subset=["race_id", "horse_id"], keep="last")
+            _tmp = FeatureEngineer.__new__(FeatureEngineer)
+            _tmp.history = combined
+            horse_recent_form = _tmp._compute_horse_recent_form_for_inference()
+            logger.info(
+                f"  horse_recent_form: 全履歴 {len(combined):,} 行（訓練 {len(self.history):,} + 追加 {len(extra_preprocessed):,}）で計算"
+            )
+        else:
+            horse_recent_form = self._compute_horse_recent_form_for_inference()
 
         stats = {
             "sire_win_rate":        self._sire_win_rate,

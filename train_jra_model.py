@@ -150,7 +150,14 @@ def main() -> None:
     trainer.save(model_path, org="jra")
     # 不調期モデルは feature_stats を上書きしない（全期間統計を維持）
     if not args.bad_season:
-        fe.save_stats(settings.stats_path)
+        # test_results_new.csv が存在する場合、horse_recent_form に含める
+        # （直近成績の精度向上: 2025年以降のレース結果を反映）
+        extra_results_path = ROOT / "data/raw/test_results_new.csv"
+        extra_df: pd.DataFrame | None = None
+        if extra_results_path.exists():
+            extra_df = pd.read_csv(extra_results_path, dtype=str)
+            logger.info(f"  追加履歴読み込み: {extra_results_path} ({len(extra_df):,} 行)")
+        fe.save_stats(settings.stats_path, extra_history_df=extra_df)
         logger.info(f"  統計  : {settings.stats_path}")
     else:
         logger.info("  統計: 全期間モデルの feature_stats.pkl をそのまま使用")
