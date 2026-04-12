@@ -305,6 +305,7 @@ def predict_and_bet(
     fe: FeatureEngineer,
     trainer: ModelTrainer,
     org: str = "jra",
+    race_date: "date | None" = None,
 ) -> dict | None:
     """
     RaceInfo を受け取り、予測と買い目を生成する。
@@ -397,12 +398,8 @@ def predict_and_bet(
     n_entries = len(entries)
 
     # レース日の月（季節フィルター用）
-    # ※ race_id の 4:6 は競馬場コード（01=札幌等）であり月ではない
-    # race_info.start_datetime または target_date から月を取得する
-    try:
-        race_month = date.today().month  # daily_batch では当日実行が前提
-    except Exception:
-        race_month = date.today().month
+    # race_date が渡された場合はその月を使用（--date 指定時の正確な季節判定）
+    race_month = race_date.month if race_date is not None else date.today().month
 
     # 改善②: 出走頭数に応じた動的閾値（多頭数は確率が薄まるため厳格化）
     # 季節フィルター①: 月別確率閾値を適用（好調期は0.30、中間期0.33、不調期0.38）
@@ -987,7 +984,7 @@ def main() -> None:
     _docs_flex = ROOT / "docs" / f"flex_{target_date}.json"
     if _docs_flex.exists() and not args.dry_run:
         logger.warning(f"  本日分 ({target_date}) の flex が既に存在します: {_docs_flex}")
-        logger.warning("  二重実行を防ぐためスキップします。強制実行は --date を明示してください。")
+        logger.warning("  二重実行を防ぐためスキップします。強制実行は docs/flex_{target_date}.json を削除してください。")
         return
 
     # ── 1. モデル・履歴読み込み ──────────────────────────────────
@@ -1048,7 +1045,7 @@ def main() -> None:
                 if bad_season_trainer is not None and _race_month in _BAD_SEASON_MONTHS
                 else trainer
             )
-            result = predict_and_bet(race_info, fe, _active_trainer, org=org)
+            result = predict_and_bet(race_info, fe, _active_trainer, org=org, race_date=target_date)
             venue_results[venue].append(result)
 
             if result and result["is_buy"]:
@@ -1113,14 +1110,13 @@ def main() -> None:
     flex_cache.write_text(flex_json_str, encoding="utf-8")
     logger.info(f"  Flex キャッシュ保存 (logs): {flex_cache}")
 
-    docs_flex = ROOT / "docs" / f"flex_{target_date}.json"
-    docs_flex.parent.mkdir(parents=True, exist_ok=True)
-    docs_flex.write_text(flex_json_str, encoding="utf-8")
-    logger.info(f"  Flex キャッシュ保存 (docs): {docs_flex}")
-
     if args.dry_run:
-        logger.info("  [dry-run] LINE 送信スキップ")
+        logger.info("  [dry-run] LINE 送信・docs/ 保存スキップ")
     else:
+        docs_flex = ROOT / "docs" / f"flex_{target_date}.json"
+        docs_flex.parent.mkdir(parents=True, exist_ok=True)
+        docs_flex.write_text(flex_json_str, encoding="utf-8")
+        logger.info(f"  Flex キャッシュ保存 (docs): {docs_flex}")
         send_line_flex(flex_msg)
 
     # ── 6. GitHub Pages 成績ページ更新 ───────────────────────────

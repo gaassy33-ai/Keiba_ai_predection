@@ -845,8 +845,8 @@ class FeatureEngineer:
             # 重複除去（同一 race_id × horse_id）
             if "race_id" in combined.columns and "horse_id" in combined.columns:
                 combined = combined.drop_duplicates(subset=["race_id", "horse_id"], keep="last")
-            _tmp = FeatureEngineer.__new__(FeatureEngineer)
-            _tmp.history = combined
+            _tmp = FeatureEngineer(pd.DataFrame())  # 空DataFrameで初期化し属性を保証
+            _tmp.history = combined               # historyのみ差し替え
             horse_recent_form = _tmp._compute_horse_recent_form_for_inference()
             logger.info(
                 f"  horse_recent_form: 全履歴 {len(combined):,} 行（訓練 {len(self.history):,} + 追加 {len(extra_preprocessed):,}）で計算"
