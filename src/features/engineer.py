@@ -745,9 +745,24 @@ class FeatureEngineer:
                 else:
                     entry_df[col] = ""
 
-            # 改善⑥: 市場オッズ（HHI 計算用）
-            # ★カラムずれ: "last_3f" 列が実際の単勝オッズ
-            if "last_3f" in race_entries.columns:
+            # 改善⑥: 市場オッズ（HHI / odds_log / popularity_rank_norm 計算用）
+            # ★カラムずれ対応:
+            #   train_results.csv (新CSV): "odds" 列が実際の単勝オッズ
+            #   test_results.csv  (旧CSV): "last_3f" 列が実際の単勝オッズ
+            # → "odds" 列の最小値が 15 未満なら正常な単勝オッズ列と判定し使用。
+            #   そうでなければ "last_3f" にフォールバック（旧CSV互換）。
+            if "odds" in race_entries.columns:
+                _odds_raw = pd.to_numeric(race_entries["odds"], errors="coerce")
+                if _odds_raw.dropna().min() < 15.0:
+                    # 正常な単勝オッズ列（train_results.csv）
+                    entry_df["odds"] = _odds_raw.values
+                elif "last_3f" in race_entries.columns:
+                    # 旧CSV: last_3f が実際の単勝オッズ
+                    entry_df["odds"] = pd.to_numeric(
+                        race_entries["last_3f"].values, errors="coerce"
+                    )
+            elif "last_3f" in race_entries.columns:
+                # odds 列が存在しない場合の後方互換
                 entry_df["odds"] = pd.to_numeric(
                     race_entries["last_3f"].values, errors="coerce"
                 )
@@ -1112,8 +1127,12 @@ class FeatureEngineer:
         "venue_ground_code",
         # 改善②: 出走頭数
         "n_entries",
-        # 改善⑥: 市場集中度
+        # 改善⑥: 市場集中度・オッズ特徴量
+        # （改善⑨を撤回: 2026-04実績で model が1.6x過信していることが判明。
+        #   市場情報をモデルに組み込み、Platt scaling と併せて確率を較正する）
         "market_hhi",
+        "odds_log",                  # ⑧ オッズ対数変換（人気度を滑らかに表現）
+        "popularity_rank_norm",      # ⑧ レース内人気順位正規化 0-1（1番人気=0）
         # 改善⑦: 前走パフォーマンス
         "prev_margin",
         "prev_last3f_rank_norm",

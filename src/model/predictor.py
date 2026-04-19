@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+import numpy as np
 import pandas as pd
 from loguru import logger
 
@@ -71,12 +72,29 @@ class RacePredictor:
         if self._trainer.model is None:
             raise RuntimeError("Model is not loaded. Call from_saved_model() first.")
 
-        X = feature_df[FeatureEngineer.FEATURE_COLUMNS].copy()
+        X = (
+            feature_df[FeatureEngineer.FEATURE_COLUMNS]
+            .apply(pd.to_numeric, errors="coerce")
+            .fillna(0)
+        )
         win_probs = self._trainer.model.predict(X)
+
+        # Platt scaling 較正（モデルの過信を補正）
+        if self._trainer.calibrator is not None:
+            win_probs = self._trainer.calibrator.predict_proba(
+                win_probs.reshape(-1, 1)
+            )[:, 1]
 
         # place_model がある場合はアンサンブル（0.7 × 勝率 + 0.3 × 複勝率）
         if self._trainer.place_model is not None:
-            place_probs = self._trainer.place_model.predict(X)
+            place_probs_raw = self._trainer.place_model.predict(X)
+            # place_model にも較正を適用
+            if self._trainer.calibrator is not None:
+                place_probs = self._trainer.calibrator.predict_proba(
+                    place_probs_raw.reshape(-1, 1)
+                )[:, 1]
+            else:
+                place_probs = place_probs_raw
             probs = 0.7 * win_probs + 0.3 * place_probs
         else:
             probs = win_probs

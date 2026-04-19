@@ -60,12 +60,47 @@ jobs:
           fi
           python collect_weekly.py --org jra $START_ARG $END_ARG
 
+      - name: feature_stats.pkl を再生成
+        env:
+          TZ: "Asia/Tokyo"
+        run: |
+          python - <<'PYEOF'
+          import sys, pickle
+          from pathlib import Path
+          import pandas as pd
+          sys.path.insert(0, str(Path(".").resolve()))
+          from src.features.engineer import FeatureEngineer
+          from config.settings import settings
+
+          train_path = Path("data/raw/train_results.csv")
+          test_path  = Path("data/raw/test_results.csv")
+
+          if not train_path.exists():
+              print("train_results.csv が見つかりません。スキップします。")
+              sys.exit(0)
+
+          train_df = pd.read_csv(train_path, dtype=str)
+          print(f"train_results: {len(train_df):,} 行")
+
+          fe = FeatureEngineer(train_df)
+          fe.precompute_aggregations()
+
+          extra_df = None
+          if test_path.exists():
+              extra_df = pd.read_csv(test_path, dtype=str)
+              print(f"test_results:  {len(extra_df):,} 行")
+
+          fe.save_stats(settings.stats_path, extra_history_df=extra_df)
+          print(f"feature_stats.pkl を更新: {settings.stats_path}")
+          PYEOF
+
       - name: 更新データを commit & push
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add data/raw/test_results.csv \
-                  data/raw/test_meta.csv    || true
+                  data/raw/test_meta.csv    \
+                  data/models/feature_stats.pkl || true
           git diff --staged --quiet && echo "No new race data" && exit 0
-          git commit -m "data: 週次レース結果追加 $(date +'%Y-%m-%d')"
+          git commit -m "data: 週次レース結果追加 & feature_stats 更新 $(date +'%Y-%m-%d')"
           git push

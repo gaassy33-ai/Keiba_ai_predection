@@ -15,6 +15,7 @@ import lightgbm as lgb
 import numpy as np
 import pandas as pd
 from loguru import logger
+from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import GroupKFold
 from sklearn.metrics import log_loss, roc_auc_score
 
@@ -38,9 +39,9 @@ class ModelTrainer:
     #   - learning_rate: 0.05 → 0.02（細かいステップで収束・木数増加）
     #   - num_leaves: 63 → 127（全会場データ増加に対応した表現力向上）
     #   - EARLY_STOPPING_ROUNDS: 50 → 100（早期終了を緩和して十分探索）
-    # 改善⑨: odds_log/popularity_rank_norm を FEATURE_COLUMNS から除外
-    #   個別馬オッズは予測特徴量ではなく EV フィルタとして post-prediction 活用
-    #   → モデルがバリュー馬を独立に発見できる設計に戻す
+    # 改善⑨ 撤回 (2026-04): odds_log/popularity_rank_norm を FEATURE_COLUMNS に復帰
+    #   2026年4月実績で model が actual の 1.6x を過信していることが判明。
+    #   市場情報をモデルに組み込み + Platt scaling で確率を較正する方針に変更。
     # ----------------------------------------------------------------
     LGBM_PARAMS = {
         "objective": "binary",
@@ -66,6 +67,8 @@ class ModelTrainer:
         self.model: lgb.Booster | None = None
         self.place_model: lgb.Booster | None = None   # is_top3 (3着以内) モデル
         self.feature_columns = FeatureEngineer.FEATURE_COLUMNS
+        # Platt scaling: OOF 予測から較正した確率変換器
+        self.calibrator: LogisticRegression | None = None
 
     # ------------------------------------------------------------------
     # 学習
@@ -122,10 +125,25 @@ class ModelTrainer:
                 f"auc={roc_auc_score(y_val, oof_preds[val_idx]):.4f}"
             )
 
+        oof_logloss = log_loss(y, oof_preds)
+        oof_auc     = roc_auc_score(y, oof_preds)
+        logger.info(f"OOF logloss={oof_logloss:.4f}  auc={oof_auc:.4f}")
+
+        # ── Platt Scaling（確率較正） ──────────────────────────────────
+        # OOF 予測（未知データへの近似）をもとにロジスティック較正器を学習する。
+        # LightGBM の生確率は過信気味（実際の的中率より高い）なため、
+        # この1変量ロジスティック回帰で補正する。
+        calib = LogisticRegression(C=100.0, solver="lbfgs", max_iter=1000)
+        calib.fit(oof_preds.reshape(-1, 1), y)
+        calib_preds = calib.predict_proba(oof_preds.reshape(-1, 1))[:, 1]
+        calib_mean_pos = calib_preds[y == 1].mean()
+        calib_mean_neg = calib_preds[y == 0].mean()
         logger.info(
-            f"OOF logloss={log_loss(y, oof_preds):.4f} "
-            f"auc={roc_auc_score(y, oof_preds):.4f}"
+            f"Platt scaling 較正完了: 1着馬平均確率 {calib_mean_pos:.3f}  "
+            f"非1着平均確率 {calib_mean_neg:.3f}  "
+            f"logloss after calib={log_loss(y, calib_preds):.4f}"
         )
+        self.calibrator = calib
 
         # 最終モデルは全データで学習
         full_dataset = lgb.Dataset(X, label=y)
@@ -253,7 +271,11 @@ class ModelTrainer:
         if path is None:
             path = settings.nar_model_path if org == "nar" else settings.model_path
         path.parent.mkdir(parents=True, exist_ok=True)
-        payload = {"model": self.model, "place_model": self.place_model}
+        payload = {
+            "model": self.model,
+            "place_model": self.place_model,
+            "calibrator": self.calibrator,   # Platt scaling 較正器
+        }
         joblib.dump(payload, path)
         logger.info(f"Model saved to {path}")
 
@@ -270,10 +292,14 @@ class ModelTrainer:
         if isinstance(raw, dict):
             instance.model = raw.get("model")
             instance.place_model = raw.get("place_model")
+            instance.calibrator = raw.get("calibrator")   # 旧モデルは None になる
         else:
             # 旧フォーマット（Booster 直接保存）に対する後方互換
             instance.model = raw
-        logger.info(f"Model loaded from {path} (org={org})")
+        if instance.calibrator is not None:
+            logger.info(f"Model loaded from {path} (org={org}, Platt scaling あり)")
+        else:
+            logger.info(f"Model loaded from {path} (org={org}, Platt scaling なし＝旧モデル)")
         return instance
 
 
