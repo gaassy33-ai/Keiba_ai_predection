@@ -604,8 +604,8 @@ def predict_and_bet(
             for i, (num, _vi) in enumerate(pool)
         }
 
-        # 3連複: EV = モデル確率(trio) × 推定市場配当  ← 馬連と同じモデルEVアプローチ
-        # (num_a, num_b, ev_score, e_od)
+        # 3連複: モデル確率(trio)降順でソート（市場オッズ非依存→時刻による買い目ブレを防止）
+        # (num_a, num_b, model_p, e_od)
         sf_all: list[tuple[str, str, float, float]] = []
         for (num_a, vi_a), (num_b, vi_b) in _comb(pool, 2):
             pa      = _partner_pred_idxs.get(num_a, 1)
@@ -618,10 +618,9 @@ def predict_and_bet(
             else:
                 e_od = _est_odds(model_p, "3連複", org=org)
 
-            ev = model_p * e_od   # EV: モデル期待確率 × 推定配当
-            sf_all.append((num_a, num_b, ev, e_od))
+            sf_all.append((num_a, num_b, model_p, e_od))
 
-        sf_all.sort(key=lambda x: -x[2])   # EV降順
+        sf_all.sort(key=lambda x: -x[2])   # モデル確率降順（市場オッズ非依存）
         sf_sel = sf_all[:MAX_SANRENFUKU_TICKETS]
         sf_est = [od for _, _, _, od in sf_sel]
         sanrenfuku_combos = (
@@ -630,8 +629,8 @@ def predict_and_bet(
             else []
         )
 
-        # 3連単: EV = モデル確率(◎→A→B) × 推定市場配当
-        # (num_2, num_3, ev_score, e_od)
+        # 3連単: モデル確率(◎→A→B)降順でソート（市場オッズ非依存→時刻による買い目ブレを防止）
+        # (num_2, num_3, model_p, e_od)
         st_all: list[tuple[str, str, float, float]] = []
         for (num_2, vi_2), (num_3, vi_3) in _perm(pool, 2):
             p2      = _partner_pred_idxs.get(num_2, 1)
@@ -644,10 +643,9 @@ def predict_and_bet(
             else:
                 e_od = _est_odds(model_p, "3連単", org=org)
 
-            ev = model_p * e_od
-            st_all.append((num_2, num_3, ev, e_od))
+            st_all.append((num_2, num_3, model_p, e_od))
 
-        st_all.sort(key=lambda x: -x[2])   # EV降順
+        st_all.sort(key=lambda x: -x[2])   # モデル確率降順（市場オッズ非依存）
         st_sel = st_all[:MAX_SANRENTAN_TICKETS]
         st_est = [od for _, _, _, od in st_sel]
         sanrentan_combos = (
@@ -980,11 +978,23 @@ def main() -> None:
     logger.info(f"daily_batch 開始: {target_date}  [JRA]")
     logger.info("=" * 60)
 
+    # ── 過去日付ガード: 2日以上前の日付での実行を防止 ──────────────
+    _today = date.today()
+    _days_diff = (_today - target_date).days
+    if _days_diff >= 2 and not args.dry_run:
+        logger.error("=" * 60)
+        logger.error(f"  ⚠️  過去日付での実行を検出しました！")
+        logger.error(f"  指定日: {target_date}  /  今日: {_today}  /  差: {_days_diff}日")
+        logger.error(f"  誤ったLINE通知を防ぐため実行を中止します。")
+        logger.error(f"  正しい日付で再実行してください: --date {_today}")
+        logger.error("=" * 60)
+        return
+
     # 二重実行ガード: 当日の flex が既に docs/ に存在する場合はスキップ
     _docs_flex = ROOT / "docs" / f"flex_{target_date}.json"
     if _docs_flex.exists() and not args.dry_run:
         logger.warning(f"  本日分 ({target_date}) の flex が既に存在します: {_docs_flex}")
-        logger.warning("  二重実行を防ぐためスキップします。強制実行は docs/flex_{target_date}.json を削除してください。")
+        logger.warning(f"  二重実行を防ぐためスキップします。強制実行は docs/flex_{target_date}.json を削除してください。")
         return
 
     # ── 1. モデル・履歴読み込み ──────────────────────────────────

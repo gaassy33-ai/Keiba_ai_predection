@@ -499,7 +499,14 @@ class FeatureEngineer:
         if self.history.empty:
             if self._horse_recent_form is not None and not self._horse_recent_form.empty:
                 hrf = self._horse_recent_form.reset_index() if "horse_id" not in self._horse_recent_form.columns else self._horse_recent_form
-                df = df.merge(hrf[["horse_id"] + COLS], on="horse_id", how="left")
+                # feature_stats.pkl が古いバージョンの場合、一部カラムが欠損している可能性がある
+                # 存在するカラムのみ merge し、欠損カラムは NaN で補完する（後方互換性）
+                available_cols = [c for c in COLS if c in hrf.columns]
+                df = df.merge(hrf[["horse_id"] + available_cols], on="horse_id", how="left")
+                # 欠損カラムを NaN で補完
+                for c in COLS:
+                    if c not in df.columns:
+                        df[c] = np.nan
             else:
                 for c in COLS:
                     df[c] = np.nan

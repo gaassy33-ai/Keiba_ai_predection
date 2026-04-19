@@ -1,11 +1,18 @@
 name: 朝7時 メインレース予想ページ更新
 
+# ──────────────────────────────────────────────────────────────────────
+# ⚠️  スケジュール実行は廃止 (2026-04-18)
+#
+# 理由: keiba_weekend.yml の朝バッチ (cron: "0 22 * * 5/6") と同時刻に
+#       実行されていたため、git push が競合しワークフローが失敗していた。
+#       全レース一括配信は keiba_weekend.yml が担当するため、このワークフ
+#       ローのスケジュール実行は不要。
+#
+# 手動実行 (workflow_dispatch) のみ残す（デバッグ・テスト用）。
+# ──────────────────────────────────────────────────────────────────────
+
 on:
-  # 土日 07:00 JST = UTC 前日 22:00
-  schedule:
-    - cron: "0 22 * * 5"   # 金 22:00 UTC = 土 07:00 JST
-    - cron: "0 22 * * 6"   # 土 22:00 UTC = 日 07:00 JST
-  # 手動実行（テスト用）
+  # 手動実行（テスト・デバッグ用のみ）
   workflow_dispatch:
 
 jobs:
@@ -15,6 +22,10 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: write
+    # keiba_weekend.yml の朝バッチと競合しないよう concurrency グループを共有
+    concurrency:
+      group: keiba-morning
+      cancel-in-progress: false
 
     steps:
       - name: Checkout
@@ -55,7 +66,8 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add docs/
           git diff --cached --quiet || git commit -m "chore: 朝7時 メインレース予想ページ更新 [skip ci]"
-          git push
+          git pull --rebase origin main
+          git push || true
 
       - name: Upload logs on failure
         if: failure()
