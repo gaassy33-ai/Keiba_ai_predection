@@ -52,11 +52,10 @@ MARK_STRONG_PROB     = 0.40   # ◎最低勝率（○との境界） ※0.35→0
 MIN_CONFIDENCE_GAP   = 0.07   # 勝率差フィルター ※0.05→0.07 2026-04-19改訂
 # ※ 的中レースの70%は差7〜10%に集中しているため0.10への引き上げは損失が大きすぎる
 # EV フィルタ（model_prob × CALIBRATION_FACTOR × odds ≥ 閾値 のみ買い）
-# 2026-04-19 実績分析: モデル確率が実績の約1.6倍過信 → 補正係数0.65を導入
-# ★ 2026-04-19 モデル改修: Platt scaling を trainer.py に組み込み済み。
-#    新モデル（train_jra_model.py で再学習後）展開後は CALIBRATION_FACTOR = 1.0 に変更すること。
-#    現在は旧モデル（Platt scaling なし）との互換性のため 0.65 を維持。
-CALIBRATION_FACTOR   = 0.65   # 旧モデル用補正係数。新Plattモデル展開後は 1.0 に変更
+# 2026-04-20 新モデル展開: Platt scaling 組み込みにより確率が較正済み。
+#   CALIBRATION_FACTOR = 1.0（較正はモデル内で完結）。
+#   Platt scaling 較正結果: 1着馬平均確率 0.206 ≈ 実績 20.4%（ほぼ一致）
+CALIBRATION_FACTOR   = 1.0    # Platt scaling 較正済みモデルのため補正不要
 EV_THRESHOLD         = 1.05   # キャリブレーション補正後EV基準値（calibrated_EV ≥ 1.05）
 # 改善②: 出走頭数ペナルティ（1頭増えるごとに+0.3%、上限+5%）
 ENTRIES_THRESHOLD_ADJ = 0.003   # per horse over 10
