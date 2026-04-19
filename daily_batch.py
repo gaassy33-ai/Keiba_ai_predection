@@ -48,11 +48,14 @@ from config.settings import settings
 # 定数
 # ======================================================================
 MIN_HONMEI_PROB      = 0.30   # ○最低勝率（バックテスト: 0.30未満はROI<60%のため除外）
-MARK_STRONG_PROB     = 0.35   # ◎最低勝率（○との境界）
-MIN_CONFIDENCE_GAP   = 0.05   # 勝率差フィルター（以下は△）
-# EV フィルタ（model_prob × odds ≥ 閾値 のみ買い）
-# バックテスト2026実測: EV≥1.15は買いレース42Rに激減→1.05に戻す
-EV_THRESHOLD         = 1.05   # 5% のポジティブエッジを要求
+MARK_STRONG_PROB     = 0.40   # ◎最低勝率（○との境界） ※0.35→0.40 2026-04-19改訂
+MIN_CONFIDENCE_GAP   = 0.07   # 勝率差フィルター ※0.05→0.07 2026-04-19改訂
+# ※ 的中レースの70%は差7〜10%に集中しているため0.10への引き上げは損失が大きすぎる
+# EV フィルタ（model_prob × CALIBRATION_FACTOR × odds ≥ 閾値 のみ買い）
+# 2026-04-19 実績分析: モデル確率が実績の約1.6倍過信 → 補正係数0.65を導入
+# (旧: EV_THRESHOLD=1.05, model_prob×odds で計算)
+CALIBRATION_FACTOR   = 0.65   # モデル確率の過信補正係数（実績単勝率/モデル平均確率 ≈ 0.62）
+EV_THRESHOLD         = 1.05   # キャリブレーション補正後EV基準値（calibrated_EV ≥ 1.05）
 # 改善②: 出走頭数ペナルティ（1頭増えるごとに+0.3%、上限+5%）
 ENTRIES_THRESHOLD_ADJ = 0.003   # per horse over 10
 ENTRIES_THRESHOLD_BASE = 10
@@ -89,7 +92,10 @@ _MARK_O_SKIP_MONTHS = {1, 2, 10}        # この月は○(低確率◎)を見送
 #   8〜15倍のとき EV閾値を緩和して拾いやすくする（ROI164%）
 _HIGH_VALUE_ODDS_MIN = 8.0
 _HIGH_VALUE_ODDS_MAX = 15.0
-_HIGH_VALUE_EV_THRESHOLD = 0.95         # 通常1.05 → 8-15倍のとき0.95に緩和
+_HIGH_VALUE_EV_THRESHOLD = 1.00         # 8-15倍のとき1.00に緩和 ※0.95→1.00 2026-04-19改訂
+
+# 大穴馬フィルタ: 単勝20倍超は市場確率5%未満 → モデルの過信が大きくスキップ
+_MAX_LONGSHOT_ODDS = 20.0
 
 # 案D: 不調期 開催場フィルタ（不調期ROI 0%会場を除外）
 _BAD_SEASON_MONTHS    = {1, 7, 8, 9, 11, 12}
@@ -425,7 +431,12 @@ def predict_and_bet(
     odds_col_map  = feat_df.set_index("horse_id")["odds"] if "odds" in feat_df.columns else {}
     _raw_odds = odds_col_map.get(honmei_id_str)
     honmei_odds_pre = float(_raw_odds) if _raw_odds is not None else float("nan")
-    honmei_ev = (honmei_prob * honmei_odds_pre
+
+    # キャリブレーション補正EV:
+    #   calibrated_ev = honmei_prob × CALIBRATION_FACTOR × odds
+    #   実績分析(2026-04-19): 購入馬券の実単勝率20.4% / モデル平均確率32.7% ≈ 0.62
+    #   CALIBRATION_FACTOR=0.65 で補正することで EV過大評価を抑制
+    honmei_ev = (honmei_prob * CALIBRATION_FACTOR * honmei_odds_pre
                  if _raw_odds is not None and not np.isnan(honmei_odds_pre) else float("nan"))
 
     # 季節フィルター④: 8〜15倍のとき EV 閾値を緩和（ROI164%の高バリューゾーン）
@@ -437,6 +448,9 @@ def predict_and_bet(
 
     # オッズ未取得時（nan）は EV フィルタをスキップして確率フィルタのみ適用
     ev_ok = (np.isnan(honmei_ev) or honmei_ev >= ev_threshold)
+
+    # 大穴馬フィルタ: 20倍超は市場確率5%未満 → モデルの過信が大きくスキップ
+    is_longshot = (not np.isnan(honmei_odds_pre) and honmei_odds_pre > _MAX_LONGSHOT_ODDS)
 
     # 季節フィルター②: 夏場（7-9月）のダートは見送り（ROI 12-61%と極端に低い）
     is_summer_dirt = (
@@ -458,7 +472,7 @@ def predict_and_bet(
     bet_mode = "複勝" if race_month in _BAD_SEASON_MONTHS else "単勝"
 
     _mark_strong = _BAD_MODEL_MARK_STRONG if _using_bad_model else MARK_STRONG_PROB
-    if is_maiden or not gap_ok or honmei_prob < prob_threshold or not ev_ok or is_summer_dirt or is_bad_venue or is_bad_distance:
+    if is_maiden or not gap_ok or honmei_prob < prob_threshold or not ev_ok or is_summer_dirt or is_bad_venue or is_bad_distance or is_longshot:
         mark = "△"
     elif honmei_prob >= _mark_strong:
         mark = "◎"
