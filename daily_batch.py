@@ -193,6 +193,12 @@ def _est_odds(prob: float, bet_type: str, org: str = "jra") -> float:
 # ======================================================================
 
 def load_history() -> pd.DataFrame:
+    """
+    DEPRECATED: main() では FeatureEngineer.from_stats() を使用するため未呼び出し。
+    注意: race_id[4:6] は会場コード（01-10）であり月ではないため、
+          以下の race_date パースは不正確（会場コードを月として誤解釈する）。
+          現在このメソッドは dead code。将来使う場合は meta CSV から race_date を取得すること。
+    """
     raw = ROOT / "data" / "raw"
     dfs = []
     for fname in ("train_results.csv", "test_results.csv"):
@@ -202,6 +208,8 @@ def load_history() -> pd.DataFrame:
     if not dfs:
         raise FileNotFoundError("train_results.csv / test_results.csv が見つかりません")
     hist = pd.concat(dfs, ignore_index=True)
+    # ⚠️ 注意: race_id[4:6] は会場コード（01-10）であり月ではない。
+    # この date は参考値としてのみ使用すること。正確な日付は meta CSV から取得する。
     hist["race_date"] = pd.to_datetime(
         hist["race_id"].str[:8].apply(
             lambda s: f"{s[:4]}-{s[4:6]}-{s[6:8]}" if len(s) >= 8 else None
@@ -386,9 +394,19 @@ def predict_and_bet(
          .apply(pd.to_numeric, errors="coerce")
          .fillna(0))
     # num_threads=1: macOS で LightGBM マルチスレッドが SIGSEGV を起こすため単スレッド化
-    win_probs = trainer.model.predict(X, num_threads=1)
+    win_raw = trainer.model.predict(X, num_threads=1)
+    # Platt scaling 較正（backtest_full.py / predictor.py と同一ロジック）
+    if trainer.calibrator is not None:
+        win_probs = trainer.calibrator.predict_proba(win_raw.reshape(-1, 1))[:, 1]
+    else:
+        win_probs = win_raw
+
     if trainer.place_model is not None:
-        place_probs = trainer.place_model.predict(X, num_threads=1)
+        place_raw = trainer.place_model.predict(X, num_threads=1)
+        if trainer.calibrator is not None:
+            place_probs = trainer.calibrator.predict_proba(place_raw.reshape(-1, 1))[:, 1]
+        else:
+            place_probs = place_raw
         win_blend = 0.7
         probs = win_blend * win_probs + (1.0 - win_blend) * place_probs
     else:
