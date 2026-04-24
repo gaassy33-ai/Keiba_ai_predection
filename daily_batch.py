@@ -385,6 +385,7 @@ def predict_and_bet(
             weather_code=wx_code,
             race_class_code=race_class_code,
             venue_code=venue_code,
+            race_date=race_date,  # days_since_last_race 計算用
         )
     except Exception as e:
         logger.warning(f"特徴量生成失敗 {race_info.race_id}: {e}")
@@ -403,17 +404,23 @@ def predict_and_bet(
 
     if trainer.place_model is not None:
         place_raw = trainer.place_model.predict(X, num_threads=1)
-        if trainer.calibrator is not None:
+        # place_model には専用の place_calibrator を使用
+        # （base rate: 勝利≈8% vs 複勝≈32% のため win calibrator の流用は不正確）
+        if getattr(trainer, "place_calibrator", None) is not None:
+            place_probs = trainer.place_calibrator.predict_proba(place_raw.reshape(-1, 1))[:, 1]
+        elif trainer.calibrator is not None:
+            # 後方互換: 旧モデル（place_calibrator なし）は win calibrator で代替
             place_probs = trainer.calibrator.predict_proba(place_raw.reshape(-1, 1))[:, 1]
         else:
             place_probs = place_raw
         win_blend = 0.7
-        probs = win_blend * win_probs + (1.0 - win_blend) * place_probs
+        blended_probs = win_blend * win_probs + (1.0 - win_blend) * place_probs
     else:
-        probs = win_probs
+        blended_probs = win_probs
 
     pred_df = feat_df[["horse_id", "horse_name", "horse_number"]].copy()
-    pred_df["win_prob"] = probs
+    pred_df["win_prob"]      = blended_probs  # 順位付け・表示にはアンサンブル確率を使用
+    pred_df["win_prob_pure"] = win_probs       # Harville 確率計算には純粋勝利確率を使用
     pred_df = pred_df.sort_values("win_prob", ascending=False).reset_index(drop=True)
 
     # --- マーク判定 ---
@@ -627,8 +634,8 @@ def predict_and_bet(
             vi = vidx(str(row["horse_id"]))
             pool.append((str(int(row["horse_number"])), vi))
 
-        # オッズ未取得時はモデル確率（正規化済み）でHarvilleを代替
-        _probs_raw = pred_df["win_prob"].tolist()
+        # Harville には純粋勝利確率を使用（アンサンブル blend では Harville 公式が崩れる）
+        _probs_raw = pred_df["win_prob_pure"].tolist()
         _probs_sum = sum(_probs_raw)
         _model_probs = [p / _probs_sum for p in _probs_raw] if _probs_sum > 0 else _probs_raw
         # pred_df index→確率 (0=本命, 1〜=相手順)

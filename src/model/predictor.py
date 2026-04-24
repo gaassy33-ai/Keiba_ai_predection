@@ -88,8 +88,14 @@ class RacePredictor:
         # place_model がある場合はアンサンブル（0.7 × 勝率 + 0.3 × 複勝率）
         if self._trainer.place_model is not None:
             place_probs_raw = self._trainer.place_model.predict(X)
-            # place_model にも較正を適用
-            if self._trainer.calibrator is not None:
+            # place_model には専用の place_calibrator を使用
+            # （base rate が勝利モデルと大きく異なるため共用はNG: 勝利≈8% vs 複勝≈32%）
+            if self._trainer.place_calibrator is not None:
+                place_probs = self._trainer.place_calibrator.predict_proba(
+                    place_probs_raw.reshape(-1, 1)
+                )[:, 1]
+            elif self._trainer.calibrator is not None:
+                # 後方互換: 旧モデル（place_calibrator なし）は win calibrator で代替
                 place_probs = self._trainer.calibrator.predict_proba(
                     place_probs_raw.reshape(-1, 1)
                 )[:, 1]

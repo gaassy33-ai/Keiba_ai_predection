@@ -116,8 +116,16 @@ def _est_odds(prob, bet_type="3連複"):
     return (1.0 - take) / max(prob, 0.001)
 
 
-def _apply_model(act: ModelTrainer, X: pd.DataFrame) -> np.ndarray:
-    """Platt scaling 込みの確率を返す。"""
+def _apply_model(act: ModelTrainer, X: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
+    """Platt scaling 込みの確率を返す。
+
+    Returns
+    -------
+    win_probs : np.ndarray
+        較正済み勝利確率（Harville モデルに使用）
+    blended_probs : np.ndarray
+        0.7×勝利 + 0.3×複勝 のアンサンブル確率（馬の順位付けに使用）
+    """
     win_raw = act.model.predict(X, num_threads=1)
     if act.calibrator is not None:
         win_probs = act.calibrator.predict_proba(win_raw.reshape(-1, 1))[:, 1]
@@ -126,12 +134,18 @@ def _apply_model(act: ModelTrainer, X: pd.DataFrame) -> np.ndarray:
 
     if act.place_model is not None:
         place_raw = act.place_model.predict(X, num_threads=1)
-        if act.calibrator is not None:
+        # place_model には専用の place_calibrator を使用
+        # （base rate: 勝利≈8% vs 複勝≈32% のため win calibrator の流用は不正確）
+        if getattr(act, "place_calibrator", None) is not None:
+            place_probs = act.place_calibrator.predict_proba(place_raw.reshape(-1, 1))[:, 1]
+        elif act.calibrator is not None:
+            # 後方互換: 旧モデル（place_calibrator なし）は win calibrator で代替
             place_probs = act.calibrator.predict_proba(place_raw.reshape(-1, 1))[:, 1]
         else:
             place_probs = place_raw
-        return 0.7 * win_probs + 0.3 * place_probs
-    return win_probs
+        blended = 0.7 * win_probs + 0.3 * place_probs
+        return win_probs, blended
+    return win_probs, win_probs
 
 
 def is_buy_race(h1_prob, gap, month, is_maiden, n_entries,
@@ -236,10 +250,11 @@ def _process_race(race_id, entries, meta_row, fe, act, bad_trainer) -> dict | No
     model = bad_trainer if using_bad else act
 
     X = feat_df[FeatureEngineer.FEATURE_COLUMNS].apply(pd.to_numeric, errors="coerce").fillna(0)
-    probs = _apply_model(model, X)
+    win_probs_arr, blended_probs_arr = _apply_model(model, X)
 
     pred_df = feat_df[["horse_id", "horse_name", "horse_number"]].copy()
-    pred_df["win_prob"] = probs
+    pred_df["win_prob"]      = blended_probs_arr  # 順位付け・表示にはアンサンブル確率を使用
+    pred_df["win_prob_pure"] = win_probs_arr       # Harville 確率計算には純粋勝利確率を使用
     pred_df = pred_df.sort_values("win_prob", ascending=False).reset_index(drop=True)
 
     if len(pred_df) < 3:
@@ -293,7 +308,8 @@ def _process_race(race_id, entries, meta_row, fe, act, bad_trainer) -> dict | No
     odds_list = [float(odds_map.get(hid, float("nan"))) for hid in valid_ids]
     odds_list = [o if not np.isnan(o) and o > 1.0 else 5.0 for o in odds_list]
     mkt_probs = _market_probs(odds_list)
-    probs_raw = pred_df["win_prob"].tolist()
+    # Harville には純粋勝利確率を使用（アンサンブル blend では Harville 公式が崩れる）
+    probs_raw = pred_df["win_prob_pure"].tolist()
     ps = sum(probs_raw)
     model_probs = [p / ps for p in probs_raw] if ps > 0 else probs_raw
     hi = valid_ids.index(honmei_id) if honmei_id in valid_ids else 0

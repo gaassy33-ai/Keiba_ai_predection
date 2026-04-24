@@ -68,7 +68,8 @@ class ModelTrainer:
         self.place_model: lgb.Booster | None = None   # is_top3 (3着以内) モデル
         self.feature_columns = FeatureEngineer.FEATURE_COLUMNS
         # Platt scaling: OOF 予測から較正した確率変換器
-        self.calibrator: LogisticRegression | None = None
+        self.calibrator: LogisticRegression | None = None       # 勝利モデル用（base rate ≈ 8%）
+        self.place_calibrator: LogisticRegression | None = None  # 複勝モデル用（base rate ≈ 30-35%）
 
     # ------------------------------------------------------------------
     # 学習
@@ -190,10 +191,27 @@ class ModelTrainer:
             oof_preds[val_idx] = booster.predict(X_val)
             models.append(booster)
 
+        oof_logloss = log_loss(y, oof_preds)
+        oof_auc     = roc_auc_score(y, oof_preds)
         logger.info(
-            f"Place model OOF logloss={log_loss(y, oof_preds):.4f} "
-            f"auc={roc_auc_score(y, oof_preds):.4f}"
+            f"Place model OOF logloss={oof_logloss:.4f} "
+            f"auc={oof_auc:.4f}"
         )
+
+        # ── Place Platt Scaling（複勝確率較正）────────────────────────────
+        # 勝利モデルの calibrator とは別に、複勝モデル専用の較正器を学習する。
+        # 複勝の base rate は約 30-35%（勝利の約 8% とは大きく異なる）ため
+        # 勝利用 calibrator を流用すると大きな較正エラーが発生する。
+        place_calib = LogisticRegression(C=100.0, solver="lbfgs", max_iter=1000)
+        place_calib.fit(oof_preds.reshape(-1, 1), y)  # y=is_placed
+        place_calib_preds = place_calib.predict_proba(oof_preds.reshape(-1, 1))[:, 1]
+        logger.info(
+            f"Place Platt scaling 較正完了: 3着以内馬平均確率 {place_calib_preds[y==1].mean():.3f}  "
+            f"非3着以内平均確率 {place_calib_preds[y==0].mean():.3f}  "
+            f"logloss after calib={log_loss(y, place_calib_preds):.4f}"
+        )
+        self.place_calibrator = place_calib
+
         full_dataset = lgb.Dataset(X, label=y)
         best_rounds = max(m.best_iteration for m in models)
         self.place_model = lgb.train(
@@ -274,7 +292,8 @@ class ModelTrainer:
         payload = {
             "model": self.model,
             "place_model": self.place_model,
-            "calibrator": self.calibrator,   # Platt scaling 較正器
+            "calibrator": self.calibrator,         # 勝利モデル Platt scaling 較正器
+            "place_calibrator": self.place_calibrator,  # 複勝モデル専用 Platt scaling 較正器
         }
         joblib.dump(payload, path)
         logger.info(f"Model saved to {path}")
@@ -292,14 +311,18 @@ class ModelTrainer:
         if isinstance(raw, dict):
             instance.model = raw.get("model")
             instance.place_model = raw.get("place_model")
-            instance.calibrator = raw.get("calibrator")   # 旧モデルは None になる
+            instance.calibrator = raw.get("calibrator")                 # 旧モデルは None
+            instance.place_calibrator = raw.get("place_calibrator")     # 旧モデルは None
         else:
             # 旧フォーマット（Booster 直接保存）に対する後方互換
             instance.model = raw
+        calib_info = []
         if instance.calibrator is not None:
-            logger.info(f"Model loaded from {path} (org={org}, Platt scaling あり)")
-        else:
-            logger.info(f"Model loaded from {path} (org={org}, Platt scaling なし＝旧モデル)")
+            calib_info.append("win_calib=あり")
+        if instance.place_calibrator is not None:
+            calib_info.append("place_calib=あり")
+        calib_str = ", ".join(calib_info) if calib_info else "Platt scaling なし（旧モデル）"
+        logger.info(f"Model loaded from {path} (org={org}, {calib_str})")
         return instance
 
 

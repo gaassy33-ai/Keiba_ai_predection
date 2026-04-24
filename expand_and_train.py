@@ -136,6 +136,17 @@ def main() -> None:
     # ── 保存 ────────────────────────────────────────────────────
     logger.info("[STEP 3] モデル・特徴量統計保存")
     trainer.save(settings.model_path, org="jra")
+
+    # race_date を meta から付与して days_since_last_race が推論時に使えるようにする
+    date_map = combined_meta.set_index("race_id")["race_date"].to_dict() \
+        if "race_date" in combined_meta.columns else {}
+    if date_map:
+        combined_results["race_date"] = pd.to_datetime(
+            combined_results["race_id"].map(date_map), errors="coerce"
+        )
+        fe.history = fe._preprocess_history(combined_results)
+        logger.info(f"  race_date 付与後 history: {fe.history['race_date'].notna().sum():,} 行")
+
     fe.save_stats(settings.stats_path)
 
     total = (time.time() - t0) / 60

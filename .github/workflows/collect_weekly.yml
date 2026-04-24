@@ -65,7 +65,7 @@ jobs:
           TZ: "Asia/Tokyo"
         run: |
           python - <<'PYEOF'
-          import sys, pickle
+          import sys
           from pathlib import Path
           import pandas as pd
           sys.path.insert(0, str(Path(".").resolve()))
@@ -74,6 +74,8 @@ jobs:
 
           train_path = Path("data/raw/train_results.csv")
           test_path  = Path("data/raw/test_results.csv")
+          train_meta_path = Path("data/raw/train_meta.csv")
+          test_meta_path  = Path("data/raw/test_meta.csv")
 
           if not train_path.exists():
               print("train_results.csv が見つかりません。スキップします。")
@@ -82,12 +84,29 @@ jobs:
           train_df = pd.read_csv(train_path, dtype=str)
           print(f"train_results: {len(train_df):,} 行")
 
+          # race_date を meta CSV から取得して history に付与（days_since_last_race 用）
+          date_map = {}
+          for meta_path in (train_meta_path, test_meta_path):
+              if meta_path.exists():
+                  meta_df = pd.read_csv(meta_path, dtype=str)
+                  if "race_date" in meta_df.columns and "race_id" in meta_df.columns:
+                      date_map.update(meta_df.set_index("race_id")["race_date"].to_dict())
+          if date_map:
+              train_df["race_date"] = pd.to_datetime(
+                  train_df["race_id"].map(date_map), errors="coerce"
+              )
+              print(f"race_date 付与: {train_df['race_date'].notna().sum():,} 行")
+
           fe = FeatureEngineer(train_df)
           fe.precompute_aggregations()
 
           extra_df = None
           if test_path.exists():
               extra_df = pd.read_csv(test_path, dtype=str)
+              if date_map:
+                  extra_df["race_date"] = pd.to_datetime(
+                      extra_df["race_id"].map(date_map), errors="coerce"
+                  )
               print(f"test_results:  {len(extra_df):,} 行")
 
           fe.save_stats(settings.stats_path, extra_history_df=extra_df)

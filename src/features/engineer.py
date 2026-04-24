@@ -334,6 +334,7 @@ class FeatureEngineer:
         weather_code: int,
         race_class_code: int = -1,
         venue_code: int = -1,
+        race_date=None,  # pd.Timestamp | str | None — days_since_last_race 計算用
     ) -> pd.DataFrame:
         """
         出走馬リスト (entry_df) に特徴量を結合して返す。
@@ -385,7 +386,9 @@ class FeatureEngineer:
             odds_num = pd.to_numeric(df["odds"], errors="coerce")
             # 30倍超は同一視（波乱傾向増加に対してモデルが過度にフォローするのを防ぐ）
             odds_capped = odds_num.clip(upper=30.0)
-            df["odds_log"] = np.log1p(odds_capped)
+            # log(odds) を使用: オッズは必ず≥1.0 なので log1p より自然な変換
+            # 下限 1.01 で clip して log(0) を防ぐ
+            df["odds_log"] = np.log(odds_capped.clip(lower=1.01))
             pop_rank = odds_num.rank(method="min", ascending=True)
             n_horses = pop_rank.max()
             df["popularity_rank_norm"] = (
@@ -401,6 +404,20 @@ class FeatureEngineer:
         else:
             df["trainer_win_rate"]  = np.nan
             df["trainer_place_rate"] = np.nan
+
+        # ── 産駒勝率（父別・母父別）────────────────────────────────────
+        # precompute_aggregations() で計算済みの産駒統計を df に結合する
+        if self._sire_win_rate is not None and "father" in df.columns:
+            swr = self._sire_win_rate.reset_index()
+            df = df.merge(swr, on="father", how="left")
+        else:
+            df["sire_win_rate"] = np.nan
+
+        if self._bms_win_rate is not None and "mother_father" in df.columns:
+            bwr = self._bms_win_rate.reset_index()
+            df = df.merge(bwr, on="mother_father", how="left")
+        else:
+            df["bms_win_rate"] = np.nan
 
         # ── ジョッキー適性 ───────────────────────────────────────────
         if self._jockey_course_stats is not None:
@@ -427,6 +444,19 @@ class FeatureEngineer:
 
         # ── 直近成績（改善⑦含む）────────────────────────────────────
         df = self._add_recent_form(df)
+
+        # ── 前走からの経過日数 ─────────────────────────────────────────
+        # race_date が渡された場合のみ計算（推論時は当日日付、学習時は各レース日）
+        if race_date is not None and "last_race_date" in df.columns:
+            _rd = pd.to_datetime(race_date, errors="coerce")
+            if pd.notna(_rd):
+                df["days_since_last_race"] = (
+                    _rd - pd.to_datetime(df["last_race_date"], errors="coerce")
+                ).dt.days.clip(lower=0, upper=365)
+            else:
+                df["days_since_last_race"] = np.nan
+        else:
+            df["days_since_last_race"] = np.nan
 
         # ── 3歳馬フラグ（評論家フィードバック: 春の3歳馬急成長期対応）────
         age_num = pd.to_numeric(df.get("age", pd.Series(dtype=float)), errors="coerce")
@@ -493,6 +523,7 @@ class FeatureEngineer:
             "prev_race_class_code",
             "prev_horse_weight",    # ⑤ 前走馬体重 (kg)
             "horse_weight_change",  # ⑤ 前走比体重変化 (kg差)
+            "last_race_date",       # 前走日付（days_since_last_race 計算用）
         ]
 
         # ── 推論パス: from_stats() でロード済みの統計を使用 ───────────
@@ -516,20 +547,30 @@ class FeatureEngineer:
         h = self.history
 
         # 上がり3F の race 内ランクを事前計算（改善⑦）
+        h = h.copy()
         if "last_3f_num" in h.columns and "race_id" in h.columns:
-            h = h.copy()
             h["last3f_rank_in_race"] = h.groupby("race_id")["last_3f_num"].rank(
                 ascending=True, method="min", na_option="keep"
             )
             h["last3f_n_in_race"] = h.groupby("race_id")["last_3f_num"].transform("count")
             h["last3f_rank_norm"] = h["last3f_rank_in_race"] / h["last3f_n_in_race"]
         else:
-            h = h.copy()
             h["last3f_rank_norm"] = np.nan
 
-        # 馬ごとの直近 N 走（race_id 降順 = 新しい順）
+        # ソートキー: race_date がある場合は使用、なければ pseudo_date（YYYY+KK+DD）で代替
+        # race_id[4:6] は会場コード（01-10）で時系列でないため raw race_id でのソートは不正確
+        # pseudo_date = race_id[0:4] + race_id[6:10]（年 + 回数 + 日）で会場コードを除外する
+        if "race_date" not in h.columns or not h["race_date"].notna().any():
+            h["_pseudo_date"] = h["race_id"].astype(str).apply(
+                lambda x: x[:4] + x[6:10] if len(x) >= 10 else x
+            )
+            _sort_key = "_pseudo_date"
+        else:
+            _sort_key = "race_date"
+
+        # 馬ごとの直近 N 走（新しい順）
         recent = (
-            h.sort_values("race_id", ascending=False)
+            h.sort_values(_sort_key, ascending=False)
             .groupby("horse_id")
             .head(self.RECENT_N)
         )
@@ -546,8 +587,9 @@ class FeatureEngineer:
         )
 
         # 前走（最新1走）の着差・上がり3Fランク（改善⑦）
-        all_sorted = h.sort_values(["horse_id", "race_id"], ascending=[True, False])
-        all_sorted = all_sorted.copy()
+        all_sorted = h.sort_values(
+            ["horse_id", _sort_key], ascending=[True, False]
+        ).copy()
         all_sorted["_recent_rank"] = all_sorted.groupby("horse_id").cumcount() + 1
 
         prev_race = all_sorted[all_sorted["_recent_rank"] == 1].copy()
@@ -567,6 +609,9 @@ class FeatureEngineer:
         # ⑤ 前走馬体重（推論時はこの値を使用、当日体重は計量前なので不明）
         if "horse_weight_num" in prev_race.columns:
             prev_cols.append("horse_weight_num")
+        # 前走日付（days_since_last_race 計算用）
+        if "race_date" in prev_race.columns:
+            prev_cols.append("race_date")
 
         prev_df = prev_race[prev_cols].rename(columns={
             "margin_num": "prev_margin",
@@ -575,6 +620,7 @@ class FeatureEngineer:
             "last_3f_num": "_prev_3f",
             "race_class_code_hist": "prev_race_class_code",
             "horse_weight_num": "prev_horse_weight",
+            "race_date": "last_race_date",
         })
 
         # ⑤ 前々走（rank=2）の馬体重を取得して体重変化を計算
@@ -691,11 +737,13 @@ class FeatureEngineer:
 
         for i, race_id in enumerate(target_race_ids):
             race_entries = h[h["race_id"] == race_id].copy()
+            race_date_val = None  # build_entry_features に渡す日付（初期化）
             if "race_date" in h.columns and not race_entries.empty:
                 race_date_val = race_entries["race_date"].iloc[0]
                 if pd.notna(race_date_val):
                     history_before = h[h["race_date"] < race_date_val]
                 else:
+                    race_date_val = None
                     history_before = h[h["race_id"] < race_id]
             else:
                 history_before = h[h["race_id"] < race_id]
@@ -779,6 +827,7 @@ class FeatureEngineer:
                     weather_code=weather_code,
                     race_class_code=race_class_code,
                     venue_code=venue_code,
+                    race_date=race_date_val,  # None の場合は days_since_last_race が NaN になる
                 )
             except Exception as e:
                 logger.warning(f"Skipping race_id={race_id}: feature build failed ({e})")
@@ -900,19 +949,28 @@ class FeatureEngineer:
             return None
 
         # 上がり3F の race 内ランクを事前計算
+        h = h.copy()
         if "last_3f_num" in h.columns and "race_id" in h.columns:
-            h = h.copy()
             h["last3f_rank_in_race"] = h.groupby("race_id")["last_3f_num"].rank(
                 ascending=True, method="min", na_option="keep"
             )
             h["last3f_n_in_race"] = h.groupby("race_id")["last_3f_num"].transform("count")
             h["last3f_rank_norm"] = h["last3f_rank_in_race"] / h["last3f_n_in_race"]
         else:
-            h = h.copy()
             h["last3f_rank_norm"] = np.nan
 
+        # ソートキー: race_date がある場合は使用、なければ pseudo_date（YYYY+KK+DD）で代替
+        # race_id[4:6] は会場コード（01-10）で時系列でないため raw race_id でのソートは不正確
+        if "race_date" not in h.columns or not h["race_date"].notna().any():
+            h["_pseudo_date"] = h["race_id"].astype(str).apply(
+                lambda x: x[:4] + x[6:10] if len(x) >= 10 else x
+            )
+            _sort_key_inf = "_pseudo_date"
+        else:
+            _sort_key_inf = "race_date"
+
         recent = (
-            h.sort_values("race_id", ascending=False)
+            h.sort_values(_sort_key_inf, ascending=False)
             .groupby("horse_id")
             .head(self.RECENT_N)
         )
@@ -926,7 +984,9 @@ class FeatureEngineer:
             .reset_index()
         )
 
-        all_sorted_inf = h.sort_values(["horse_id", "race_id"], ascending=[True, False]).copy()
+        all_sorted_inf = h.sort_values(
+            ["horse_id", _sort_key_inf], ascending=[True, False]
+        ).copy()
         all_sorted_inf["_recent_rank"] = all_sorted_inf.groupby("horse_id").cumcount() + 1
 
         prev_race = all_sorted_inf[all_sorted_inf["_recent_rank"] == 1].copy()
@@ -944,6 +1004,9 @@ class FeatureEngineer:
         # ⑤ 前走馬体重
         if "horse_weight_num" in prev_race.columns:
             prev_cols.append("horse_weight_num")
+        # 前走日付（days_since_last_race 計算用）
+        if "race_date" in prev_race.columns:
+            prev_cols.append("race_date")
 
         prev_df = prev_race[prev_cols].rename(columns={
             "margin_num": "prev_margin",
@@ -952,6 +1015,7 @@ class FeatureEngineer:
             "last_3f_num": "_prev_3f",
             "race_class_code_hist": "prev_race_class_code",
             "horse_weight_num": "prev_horse_weight",
+            "race_date": "last_race_date",
         })
 
         # ⑤ 前々走（rank=2）の馬体重から体重変化を計算
@@ -1002,7 +1066,7 @@ class FeatureEngineer:
 
         for c in ("prev_margin", "prev_last3f_rank_norm", "prev_race_class_code",
                   "recent_pos_trend", "recent_last3f_trend",
-                  "prev_horse_weight", "horse_weight_change"):
+                  "prev_horse_weight", "horse_weight_change", "last_race_date"):
             if c not in result.columns:
                 result[c] = np.nan
         logger.info(f"Horse recent form computed: {len(result):,} horses")
@@ -1144,4 +1208,11 @@ class FeatureEngineer:
         # スクレイパー修正後に追加 (2026-04): 馬体重変化特徴量
         "prev_horse_weight",         # ⑤ 前走馬体重 (kg)
         "horse_weight_change",       # ⑤ 前走比体重変化 (kg差、増=正、減=負)
+        # バグ修正後に追加 (2026-05): 未使用だった特徴量を有効化
+        "sire_win_rate",             # 父別勝率（産駒統計、build_entry_featuresで結合修正済み）
+        "bms_win_rate",              # 母父別勝率（BMS統計、同上）
+        "jockey_venue_win_rate",     # 騎手×会場 勝率（交互作用特徴量）
+        "horse_ground_win_rate",     # 馬別×馬場状態 勝率（適性特徴量）
+        "is_3yo",                    # 3歳馬フラグ（春の急成長期対応）
+        "days_since_last_race",      # 前走からの経過日数（中2週以内 vs 中3週以上の違い）
     ]
