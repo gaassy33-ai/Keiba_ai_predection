@@ -10,7 +10,7 @@ daily_batch.py
     - レース絞り込み: honmei_prob ≥ 0.30 かつ 信頼度差 ≥ 0.05 かつ 未勝利・新馬除外
     - 単勝: ◎ 1点
     - 複勝: ◎ 1点（参考表示）
-    - 馬連: ◎ - モデル上位5頭から EV 上位 最大3点（トリガミ除外）
+    - 馬連: ◎ - モデル確率上位3頭（3連単と同一ランキング順、トリガミ除外）
     - 3連複: ◎軸 × モデル上位5頭 → Harville降順 最大5点（合成オッズ<1.0はケン）
     - 3連単: ◎1着固定 × モデル上位5頭 → Harville降順 最大5点（合成オッズ<1.0はケン）
 
@@ -582,32 +582,34 @@ def predict_and_bet(
     hi = vidx(honmei_row["horse_id"])
 
     # --- モデル上位 EV_PARTNER_TOP_N 頭（◎除く）---
+    # partner_rows は win_prob 降順にソート済み（3連複・3連単と同一プール）
     partner_rows = pred_df[pred_df["horse_id"] != honmei_row["horse_id"]].head(EV_PARTNER_TOP_N)
 
-    # --- 馬連: EV スコア上位3頭・トリガミ除外 ---
-    scored = []
-    for _, row in partner_rows.iterrows():
-        hid  = str(row["horse_id"])
-        prob = float(row["win_prob"])
-        odds = _parse_odds(odds_map.get(hid, 5.0))
-        if np.isnan(odds) or odds <= 1.0:
-            odds = 5.0
-        scored.append((hid, prob * odds, str(int(row["horse_number"]))))
-    scored.sort(key=lambda x: x[1], reverse=True)
-
+    # --- 馬連: モデル確率上位3頭・トリガミ除外 ---
+    # 【修正 2026-04-25】
+    # 旧実装: EV スコア (win_prob × win_odds) でソート → 高オッズ馬が優先されて
+    #         3連単の紐候補（Harville確率上位）と完全に乖離する不整合が発生。
+    # 新実装: partner_rows の win_prob 順（= 3連単と同一ランキング）で上位3頭を選択。
+    #         トリガミ判定のみ市場確率を使用し、EV依存ソートは廃止。
     baren_nums: list[str] = []
-    for hid, _ev, num in scored[:MAX_BAREN_TICKETS]:
-        vi = vidx(hid)
+    for _, row in partner_rows.iterrows():
+        hid = str(row["horse_id"])
+        num = str(int(row["horse_number"]))
+        vi  = vidx(hid)
         if hi is not None and vi is not None and mkt_probs:
             e_odds = _est_odds(_prob_quinella(mkt_probs, hi, vi), "馬連", org=org)
             if e_odds < TORIKAMI_THRESHOLD:
                 continue
         baren_nums.append(num)
+        if len(baren_nums) >= MAX_BAREN_TICKETS:
+            break
 
-    # --- 馬単: ◎1着固定 × 上位EV頭 → Harville降順 最大3点 ---
+    # --- 馬単: ◎1着固定 × 推定オッズ上位 最大3点 ---
     um_all: list[tuple[str, float]] = []
-    for hid, _ev, num in scored:
-        vi = vidx(hid)
+    for _, row in partner_rows.iterrows():
+        hid = str(row["horse_id"])
+        num = str(int(row["horse_number"]))
+        vi  = vidx(hid)
         if hi is not None and vi is not None and mkt_probs:
             e_od = _est_odds(_harville(mkt_probs, [hi, vi]), "馬単", org=org)
             if e_od < TORIKAMI_THRESHOLD:
