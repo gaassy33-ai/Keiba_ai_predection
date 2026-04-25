@@ -10,7 +10,7 @@ daily_batch.py
     - レース絞り込み: honmei_prob ≥ 0.30 かつ 信頼度差 ≥ 0.05 かつ 未勝利・新馬除外
     - 単勝: ◎ 1点
     - 複勝: ◎ 1点（参考表示）
-    - 馬連: ◎ - モデル確率上位3頭（3連単と同一ランキング順、トリガミ除外）
+    - 馬連: ◎ - モデル上位7頭 ∪ 市場人気上位3頭 → 最大5点（トリガミ除外）
     - 3連複: ◎軸 × モデル上位5頭 → Harville降順 最大5点（合成オッズ<1.0はケン）
     - 3連単: ◎1着固定 × モデル上位5頭 → Harville降順 最大5点（合成オッズ<1.0はケン）
 
@@ -108,8 +108,11 @@ _BAD_SEASON_MAX_DISTANCE = 1800
 # 案B: 不調期専用モデルの閾値（スケールが全期間モデルと異なるため専用設定）
 _BAD_MODEL_PROB_THRESHOLD = 0.25
 _BAD_MODEL_MARK_STRONG    = 0.28
-EV_PARTNER_TOP_N     = 7      # EV計算の候補プール（上位7頭）※5→7に拡張（3連複カバレッジ改善）
-MAX_BAREN_TICKETS    = 3      # 馬連最大点数
+EV_PARTNER_TOP_N     = 7      # モデル確率上位候補プール（上位7頭）
+MARKET_PARTNER_N     = 3      # 市場人気上位N頭を紐候補に追加（◎除く、モデル候補未含のみ）
+MAX_BAREN_MODEL      = 3      # 馬連: モデル確率上位から最大N点
+MAX_BAREN_MARKET     = 2      # 馬連: 市場追加馬から最大N点（スロット確保で取りこぼし防止）
+MAX_BAREN_TICKETS    = MAX_BAREN_MODEL + MAX_BAREN_MARKET  # 合計5点
 MAX_UMATAN_TICKETS   = 3      # 馬単最大点数
 MAX_SANRENFUKU_TICKETS = 7    # 3連複最大点数 ※5→7に拡張
 MAX_SANRENTAN_TICKETS  = 7    # 3連単最大点数 ※5→7に拡張（ROI +24.3pt、追加分ROI 266%）
@@ -581,28 +584,89 @@ def predict_and_bet(
 
     hi = vidx(honmei_row["horse_id"])
 
-    # --- モデル上位 EV_PARTNER_TOP_N 頭（◎除く）---
-    # partner_rows は win_prob 降順にソート済み（3連複・3連単と同一プール）
-    partner_rows = pred_df[pred_df["horse_id"] != honmei_row["horse_id"]].head(EV_PARTNER_TOP_N)
+    # -----------------------------------------------------------------------
+    # 紐候補プール: モデル確率上位 ∪ 市場人気上位
+    # 【改善 2026-04-25】
+    # 旧実装: モデル確率上位7頭のみ
+    #   → 「モデルが低評価だが市場が高評価な馬」（典型的2着馬）を取りこぼす
+    #   例) 福島7R: ○6番が1着なのに2着の1番(馬連5人気)がモデル候補外 → 1,460円取りこぼし
+    # 新実装: モデル上位7頭 ∪ 市場人気上位3頭（◎除く）
+    #   → 単勝オッズ上位の馬を安全網として追加。馬連5点に拡大してカバレッジ向上。
+    # -----------------------------------------------------------------------
+    honmei_id_str = str(honmei_row["horse_id"])
 
-    # --- 馬連: モデル確率上位3頭・トリガミ除外 ---
-    # 【修正 2026-04-25】
-    # 旧実装: EV スコア (win_prob × win_odds) でソート → 高オッズ馬が優先されて
-    #         3連単の紐候補（Harville確率上位）と完全に乖離する不整合が発生。
-    # 新実装: partner_rows の win_prob 順（= 3連単と同一ランキング）で上位3頭を選択。
-    #         トリガミ判定のみ市場確率を使用し、EV依存ソートは廃止。
-    baren_nums: list[str] = []
-    for _, row in partner_rows.iterrows():
-        hid = str(row["horse_id"])
-        num = str(int(row["horse_number"]))
-        vi  = vidx(hid)
+    # モデル確率上位7頭（win_prob 降順）
+    partner_rows_model = pred_df[
+        pred_df["horse_id"].astype(str) != honmei_id_str
+    ].head(EV_PARTNER_TOP_N)
+    model_top_ids = set(partner_rows_model["horse_id"].astype(str))
+
+    # 市場人気上位 MARKET_PARTNER_N 頭（単勝オッズ昇順, ◎除く, モデル候補に未含の馬のみ）
+    market_sorted = sorted(
+        [(str(hid), o) for hid, o in valid_pairs if str(hid) != honmei_id_str],
+        key=lambda x: x[1],  # オッズ昇順 = 人気上位
+    )
+    extra_ids = {hid for hid, _ in market_sorted[:MARKET_PARTNER_N]
+                 if hid not in model_top_ids}
+
+    extra_rows = (
+        pred_df[pred_df["horse_id"].astype(str).isin(extra_ids)]
+        if extra_ids else pd.DataFrame()
+    )
+
+    # 結合: モデル上位（確率降順） → 市場追加分
+    partner_rows = (
+        pd.concat([partner_rows_model, extra_rows], ignore_index=True)
+        if not extra_rows.empty else partner_rows_model
+    )
+
+    n_market_added = len(extra_ids)
+    if n_market_added:
+        added_nums = sorted(
+            str(int(r["horse_number"]))
+            for _, r in extra_rows.iterrows()
+        )
+        logger.debug(f"    市場人気追加: {added_nums} ({n_market_added}頭)")
+
+    # --- 馬連: 2パス方式（モデル上位3点 + 市場追加2点）最大5点・トリガミ除外 ---
+    # 【設計】モデル上位スロット(MAX_BAREN_MODEL)と市場追加スロット(MAX_BAREN_MARKET)を分離。
+    # 市場追加馬を partner_rows 末尾に追加すると、モデル上位5頭で先に埋まってしまうため、
+    # 専用スロットを確保して「モデル低評価だが市場人気高い馬」を必ず選択できるようにする。
+
+    def _baren_torigami_ok(hid: str) -> bool:
+        vi = vidx(hid)
         if hi is not None and vi is not None and mkt_probs:
-            e_odds = _est_odds(_prob_quinella(mkt_probs, hi, vi), "馬連", org=org)
-            if e_odds < TORIKAMI_THRESHOLD:
-                continue
-        baren_nums.append(num)
-        if len(baren_nums) >= MAX_BAREN_TICKETS:
+            return _est_odds(_prob_quinella(mkt_probs, hi, vi), "馬連", org=org) >= TORIKAMI_THRESHOLD
+        return True
+
+    baren_nums: list[str] = []
+
+    # パス1: モデル確率上位から最大 MAX_BAREN_MODEL 頭
+    for _, row in partner_rows_model.iterrows():
+        hid = str(row["horse_id"])
+        if not _baren_torigami_ok(hid):
+            continue
+        baren_nums.append(str(int(row["horse_number"])))
+        if len(baren_nums) >= MAX_BAREN_MODEL:
             break
+
+    # パス2: 市場追加馬から最大 MAX_BAREN_MARKET 頭（市場人気順）
+    if not extra_rows.empty:
+        extra_by_pop = sorted(
+            extra_rows.iterrows(),
+            key=lambda ir: next(
+                (o for h, o in market_sorted if h == str(ir[1]["horse_id"])), 999.0
+            ),
+        )
+        mkt_count = 0
+        for _, row in extra_by_pop:
+            hid = str(row["horse_id"])
+            if not _baren_torigami_ok(hid):
+                continue
+            baren_nums.append(str(int(row["horse_number"])))
+            mkt_count += 1
+            if mkt_count >= MAX_BAREN_MARKET:
+                break
 
     # --- 馬単: ◎1着固定 × 推定オッズ上位 最大3点 ---
     um_all: list[tuple[str, float]] = []
@@ -640,10 +704,18 @@ def predict_and_bet(
         _probs_raw = pred_df["win_prob_pure"].tolist()
         _probs_sum = sum(_probs_raw)
         _model_probs = [p / _probs_sum for p in _probs_raw] if _probs_sum > 0 else _probs_raw
-        # pred_df index→確率 (0=本命, 1〜=相手順)
+        # 【修正 2026-04-25】
+        # 旧実装: pool の順番 (i+1) を pred_df インデックスとして使用
+        #   → 市場追加馬（partner_rows 末尾に追加）が pool 内の位置 ≠ pred_df ランクになるためズレが発生
+        # 新実装: pred_df 上の実際のランク（win_prob 降順インデックス）を使用
+        #   → 市場追加馬でも正確な win_prob_pure を Harville 計算に使用できる
+        _num_to_pred_rank: dict[str, int] = {
+            str(int(row["horse_number"])): pred_rank
+            for pred_rank, (_, row) in enumerate(pred_df.iterrows())
+        }
         _partner_pred_idxs = {
-            num: i + 1
-            for i, (num, _vi) in enumerate(pool)
+            num: _num_to_pred_rank.get(num, len(_model_probs) - 1)
+            for num, _vi in pool
         }
 
         # 3連複: モデル確率(trio)降順でソート（市場オッズ非依存→時刻による買い目ブレを防止）
