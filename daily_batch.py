@@ -975,8 +975,64 @@ def build_flex_message(
 # LINE Messaging API 送信
 # ======================================================================
 
-def send_line_flex(flex_msg: dict) -> None:
-    """LINE Messaging API の Push Message で Flex Message を送信する"""
+_LINE_MSG_ID_FILE = ROOT / "logs" / "line_sent_messages.json"
+
+
+def _load_sent_message_ids() -> list[dict]:
+    """保存済み送信メッセージID一覧を返す（形式: [{id, date, sent_at}, ...]）"""
+    if _LINE_MSG_ID_FILE.exists():
+        try:
+            return json.loads(_LINE_MSG_ID_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            return []
+    return []
+
+
+def _save_sent_message_ids(records: list[dict]) -> None:
+    """送信メッセージID一覧を保存する"""
+    _LINE_MSG_ID_FILE.parent.mkdir(parents=True, exist_ok=True)
+    _LINE_MSG_ID_FILE.write_text(
+        json.dumps(records, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+
+def delete_line_message(message_id: str) -> bool:
+    """指定 messageId の LINE メッセージを削除する"""
+    url = f"https://api.line.me/v2/bot/message/{message_id}"
+    headers = {"Authorization": f"Bearer {settings.line_channel_access_token}"}
+    resp = requests.delete(url, headers=headers, timeout=15)
+    if resp.status_code == 200:
+        logger.info(f"  LINE メッセージ削除完了: id={message_id}")
+        return True
+    else:
+        logger.warning(f"  LINE メッセージ削除失敗: id={message_id} status={resp.status_code} {resp.text}")
+        return False
+
+
+def delete_old_line_messages(keep_days: int = 0) -> None:
+    """保存済みの旧メッセージをすべて削除する（keep_days=0 で全削除）"""
+    records = _load_sent_message_ids()
+    if not records:
+        return
+    from datetime import datetime, timedelta
+    cutoff = (datetime.now() - timedelta(days=keep_days)).isoformat() if keep_days > 0 else None
+    remaining = []
+    for rec in records:
+        if cutoff and rec.get("sent_at", "") > cutoff:
+            remaining.append(rec)
+            continue
+        delete_line_message(rec["id"])
+    _save_sent_message_ids(remaining)
+
+
+def send_line_flex(flex_msg: dict, target_date_str: str = "") -> None:
+    """LINE Messaging API の Push Message で Flex Message を送信する。
+    送信前に前回までのメッセージを削除し、新しいメッセージIDを保存する。
+    """
+    # ── 旧メッセージを削除 ──────────────────────────────────────────
+    delete_old_line_messages(keep_days=0)
+
+    # ── 新メッセージを送信 ──────────────────────────────────────────
     url = "https://api.line.me/v2/bot/message/push"
     headers = {
         "Content-Type": "application/json",
@@ -991,6 +1047,24 @@ def send_line_flex(flex_msg: dict) -> None:
         logger.error(f"LINE 送信失敗: {resp.status_code} {resp.text}")
         resp.raise_for_status()
     logger.info(f"LINE 送信完了 (status={resp.status_code})")
+
+    # ── 送信メッセージIDを保存 ─────────────────────────────────────
+    try:
+        from datetime import datetime
+        body = resp.json()
+        sent_msgs = body.get("sentMessages", [])
+        records = _load_sent_message_ids()
+        for m in sent_msgs:
+            records.append({
+                "id": m["id"],
+                "date": target_date_str,
+                "sent_at": datetime.now().isoformat(),
+            })
+        _save_sent_message_ids(records)
+        ids = [m["id"] for m in sent_msgs]
+        logger.info(f"  送信メッセージID保存: {ids}")
+    except Exception as e:
+        logger.warning(f"  メッセージID保存失敗（続行）: {e}")
 
 
 # ======================================================================
@@ -1167,7 +1241,7 @@ def main() -> None:
         docs_flex.parent.mkdir(parents=True, exist_ok=True)
         docs_flex.write_text(flex_json_str, encoding="utf-8")
         logger.info(f"  Flex キャッシュ保存 (docs): {docs_flex}")
-        send_line_flex(flex_msg)
+        send_line_flex(flex_msg, target_date_str=str(target_date))
 
     # ── 6. GitHub Pages 成績ページ更新 ───────────────────────────
     try:
