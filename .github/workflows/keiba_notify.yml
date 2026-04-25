@@ -23,6 +23,11 @@ jobs:
     timeout-minutes: 25
     permissions:
       contents: write
+    # 同一グループの前ジョブが終わる前に次のトリガーが来た場合は前ジョブをキャンセル。
+    # これにより 20 分ごとの多重起動による git push 競合を防ぐ。
+    concurrency:
+      group: keiba-notify
+      cancel-in-progress: true
 
     steps:
       - name: Checkout

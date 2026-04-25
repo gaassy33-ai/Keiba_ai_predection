@@ -121,6 +121,9 @@ jobs:
 
       - name: データマスター実行（週次統計 LINE 通知）
         if: github.event.inputs.mode != 'test'
+        # agents.coordinator は補助機能のため、失敗しても朝バッチジョブ全体を失敗扱いにしない。
+        # これにより coordinator の失敗が LINE エラー通知の連鎖を引き起こすのを防ぐ。
+        continue-on-error: true
         env:
           LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
           LINE_CHANNEL_SECRET: ${{ secrets.LINE_CHANNEL_SECRET }}
@@ -205,6 +208,9 @@ jobs:
         run: echo "date=$(date '+%Y-%m-%d')" >> "$GITHUB_OUTPUT"
 
       - name: 夕方バッチ実行（振り返り君 + 評論家）
+        # agents.coordinator は補助機能のため、失敗しても夕バッチジョブ全体を失敗扱いにしない。
+        # 夕バッチはこのステップのみのため LINE エラー通知も行わない（ログはアーティファクトに残す）。
+        continue-on-error: true
         env:
           LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
           LINE_CHANNEL_SECRET: ${{ secrets.LINE_CHANNEL_SECRET }}
@@ -215,27 +221,6 @@ jobs:
           python -m agents.coordinator \
             --phase evening \
             --date "${{ steps.resolve_date.outputs.date }}"
-
-      - name: 失敗時 LINE エラー通知
-        if: failure()
-        env:
-          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
-          LINE_TARGET_USER_ID: ${{ secrets.LINE_TARGET_USER_ID }}
-        run: |
-          python - <<'EOF'
-          import os, requests
-          token   = os.environ["LINE_CHANNEL_ACCESS_TOKEN"]
-          user_id = os.environ["LINE_TARGET_USER_ID"]
-          requests.post(
-              "https://api.line.me/v2/bot/message/push",
-              headers={"Content-Type": "application/json",
-                       "Authorization": f"Bearer {token}"},
-              json={"to": user_id, "messages": [
-                  {"type": "text",
-                   "text": "⚠️ 夕方バッチ（振り返り君/評論家）が失敗しました。\nGitHub Actions のログを確認してください。"}
-              ]}, timeout=10,
-          )
-          EOF
 
       - name: Upload logs on failure
         if: failure()
