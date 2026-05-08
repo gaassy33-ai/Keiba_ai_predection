@@ -1,0 +1,1883 @@
+{
+  "type": "flex",
+  "altText": "05/09 競馬予測 | 東京・京都・新潟",
+  "contents": {
+    "type": "carousel",
+    "contents": [
+      {
+        "type": "bubble",
+        "size": "mega",
+        "header": {
+          "type": "box",
+          "layout": "vertical",
+          "backgroundColor": "#1a472a",
+          "paddingAll": "16px",
+          "contents": [
+            {
+              "type": "text",
+              "text": "東京",
+              "weight": "bold",
+              "color": "#ffffff",
+              "size": "lg"
+            },
+            {
+              "type": "text",
+              "text": "2026年5月9日（土）",
+              "color": "#ffffff99",
+              "size": "xs",
+              "margin": "xs"
+            }
+          ]
+        },
+        "body": {
+          "type": "box",
+          "layout": "vertical",
+          "spacing": "none",
+          "paddingAll": "0px",
+          "contents": [
+            {
+              "type": "separator"
+            },
+            {
+              "type": "box",
+              "layout": "horizontal",
+              "paddingStart": "14px",
+              "paddingEnd": "14px",
+              "paddingTop": "7px",
+              "paddingBottom": "7px",
+              "contents": [
+                {
+                  "type": "text",
+                  "text": " 1R",
+                  "size": "sm",
+                  "color": "#999999",
+                  "flex": 0
+                },
+                {
+                  "type": "box",
+                  "layout": "vertical",
+                  "flex": 1,
+                  "margin": "md",
+                  "contents": [
+                    {
+                      "type": "text",
+                      "text": "△ 13 サリーアン",
+                      "size": "sm",
+                      "color": "#999999",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "15.9%  差+3.9%  対抗12.0%",
+                      "size": "xs",
+                      "color": "#bbbbbb",
+                      "margin": "xs",
+                      "wrap": true
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "box",
+              "layout": "horizontal",
+              "paddingStart": "14px",
+              "paddingEnd": "14px",
+              "paddingTop": "7px",
+              "paddingBottom": "7px",
+              "contents": [
+                {
+                  "type": "text",
+                  "text": " 2R",
+                  "size": "sm",
+                  "color": "#999999",
+                  "flex": 0
+                },
+                {
+                  "type": "box",
+                  "layout": "vertical",
+                  "flex": 1,
+                  "margin": "md",
+                  "contents": [
+                    {
+                      "type": "text",
+                      "text": "△ 10 ミーサーク",
+                      "size": "sm",
+                      "color": "#999999",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "36.7%  差+26.3%  対抗10.4%",
+                      "size": "xs",
+                      "color": "#bbbbbb",
+                      "margin": "xs",
+                      "wrap": true
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "box",
+              "layout": "horizontal",
+              "paddingStart": "14px",
+              "paddingEnd": "14px",
+              "paddingTop": "7px",
+              "paddingBottom": "7px",
+              "contents": [
+                {
+                  "type": "text",
+                  "text": " 3R",
+                  "size": "sm",
+                  "color": "#999999",
+                  "flex": 0
+                },
+                {
+                  "type": "box",
+                  "layout": "vertical",
+                  "flex": 1,
+                  "margin": "md",
+                  "contents": [
+                    {
+                      "type": "text",
+                      "text": "△ 9 トルネードアイル",
+                      "size": "sm",
+                      "color": "#999999",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "52.9%  差+9.9%  対抗43.0%",
+                      "size": "xs",
+                      "color": "#bbbbbb",
+                      "margin": "xs",
+                      "wrap": true
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "box",
+              "layout": "horizontal",
+              "paddingStart": "14px",
+              "paddingEnd": "14px",
+              "paddingTop": "7px",
+              "paddingBottom": "7px",
+              "contents": [
+                {
+                  "type": "text",
+                  "text": " 4R",
+                  "size": "sm",
+                  "color": "#999999",
+                  "flex": 0
+                },
+                {
+                  "type": "box",
+                  "layout": "vertical",
+                  "flex": 1,
+                  "margin": "md",
+                  "contents": [
+                    {
+                      "type": "text",
+                      "text": "△ 6 ガードオブオナー",
+                      "size": "sm",
+                      "color": "#999999",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "40.6%  差+23.0%  対抗17.6%",
+                      "size": "xs",
+                      "color": "#bbbbbb",
+                      "margin": "xs",
+                      "wrap": true
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "box",
+              "layout": "horizontal",
+              "paddingStart": "14px",
+              "paddingEnd": "14px",
+              "paddingTop": "7px",
+              "paddingBottom": "7px",
+              "contents": [
+                {
+                  "type": "text",
+                  "text": " 5R",
+                  "size": "sm",
+                  "color": "#999999",
+                  "flex": 0
+                },
+                {
+                  "type": "box",
+                  "layout": "vertical",
+                  "flex": 1,
+                  "margin": "md",
+                  "contents": [
+                    {
+                      "type": "text",
+                      "text": "△ 11 ワディアルリヤハ",
+                      "size": "sm",
+                      "color": "#999999",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "44.3%  差+2.1%  対抗42.2%",
+                      "size": "xs",
+                      "color": "#bbbbbb",
+                      "margin": "xs",
+                      "wrap": true
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "box",
+              "layout": "horizontal",
+              "paddingStart": "14px",
+              "paddingEnd": "14px",
+              "paddingTop": "7px",
+              "paddingBottom": "7px",
+              "contents": [
+                {
+                  "type": "text",
+                  "text": " 6R",
+                  "size": "sm",
+                  "color": "#999999",
+                  "flex": 0
+                },
+                {
+                  "type": "box",
+                  "layout": "vertical",
+                  "flex": 1,
+                  "margin": "md",
+                  "contents": [
+                    {
+                      "type": "text",
+                      "text": "△ 12 アメテュストス",
+                      "size": "sm",
+                      "color": "#999999",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "19.3%  差+1.0%  対抗18.2%",
+                      "size": "xs",
+                      "color": "#bbbbbb",
+                      "margin": "xs",
+                      "wrap": true
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "box",
+              "layout": "horizontal",
+              "paddingStart": "14px",
+              "paddingEnd": "14px",
+              "paddingTop": "9px",
+              "paddingBottom": "9px",
+              "contents": [
+                {
+                  "type": "text",
+                  "text": " 7R",
+                  "size": "sm",
+                  "weight": "bold",
+                  "color": "#1a5533",
+                  "flex": 0
+                },
+                {
+                  "type": "box",
+                  "layout": "vertical",
+                  "flex": 1,
+                  "margin": "md",
+                  "contents": [
+                    {
+                      "type": "text",
+                      "text": "◎3 タマモトリノ（単・複）",
+                      "size": "sm",
+                      "weight": "bold",
+                      "color": "#1a5533",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "40.8%  差+27.2%  対抗13.6%",
+                      "size": "xs",
+                      "color": "#888888",
+                      "margin": "xs",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "馬連: 3-14 / 4 / 7",
+                      "size": "xs",
+                      "color": "#555555",
+                      "margin": "xs",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "馬単: 3→14 / 3→4 / 3→7",
+                      "size": "xs",
+                      "color": "#7a5500",
+                      "margin": "xs",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "3連複: 3-14-4 / 3-14-11 / 3-14-7 / 3-14-10 / 3-14-8 / 3-4-11 / 3-14-13",
+                      "size": "xs",
+                      "color": "#4a4a8a",
+                      "margin": "xs",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "3連単: 3→14→4 / 3→4→14 / 3→14→11 / 3→14→7 / 3→11→14 / 3→7→14 / 3→14→10",
+                      "size": "xs",
+                      "color": "#7a3a3a",
+                      "margin": "xs",
+                      "wrap": true
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "box",
+              "layout": "horizontal",
+              "paddingStart": "14px",
+              "paddingEnd": "14px",
+              "paddingTop": "9px",
+              "paddingBottom": "9px",
+              "contents": [
+                {
+                  "type": "text",
+                  "text": " 8R",
+                  "size": "sm",
+                  "weight": "bold",
+                  "color": "#7a5500",
+                  "flex": 0
+                },
+                {
+                  "type": "box",
+                  "layout": "vertical",
+                  "flex": 1,
+                  "margin": "md",
+                  "contents": [
+                    {
+                      "type": "text",
+                      "text": "○6 カリーニョ（単・複）",
+                      "size": "sm",
+                      "weight": "bold",
+                      "color": "#7a5500",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "38.6%  差+22.8%  対抗15.9%",
+                      "size": "xs",
+                      "color": "#888888",
+                      "margin": "xs",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "馬連: 6-2 / 5 / 3",
+                      "size": "xs",
+                      "color": "#555555",
+                      "margin": "xs",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "馬単: 6→2 / 6→5 / 6→3",
+                      "size": "xs",
+                      "color": "#7a5500",
+                      "margin": "xs",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "3連複: 6-2-5 / 6-2-3 / 6-2-8 / 6-2-7 / 6-2-4 / 6-2-1 / 6-5-3",
+                      "size": "xs",
+                      "color": "#4a4a8a",
+                      "margin": "xs",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "3連単: 6→2→5 / 6→5→2 / 6→2→3 / 6→2→8 / 6→3→2 / 6→8→2 / 6→2→7",
+                      "size": "xs",
+                      "color": "#7a3a3a",
+                      "margin": "xs",
+                      "wrap": true
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "box",
+              "layout": "horizontal",
+              "paddingStart": "14px",
+              "paddingEnd": "14px",
+              "paddingTop": "9px",
+              "paddingBottom": "9px",
+              "contents": [
+                {
+                  "type": "text",
+                  "text": " 9R",
+                  "size": "sm",
+                  "weight": "bold",
+                  "color": "#7a5500",
+                  "flex": 0
+                },
+                {
+                  "type": "box",
+                  "layout": "vertical",
+                  "flex": 1,
+                  "margin": "md",
+                  "contents": [
+                    {
+                      "type": "text",
+                      "text": "○7 アンパドゥ（単・複）",
+                      "size": "sm",
+                      "weight": "bold",
+                      "color": "#7a5500",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "35.9%  差+8.2%  対抗27.7%",
+                      "size": "xs",
+                      "color": "#888888",
+                      "margin": "xs",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "馬連: 7-8 / 3 / 12",
+                      "size": "xs",
+                      "color": "#555555",
+                      "margin": "xs",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "馬単: 7→8 / 7→3 / 7→12",
+                      "size": "xs",
+                      "color": "#7a5500",
+                      "margin": "xs",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "3連複: 7-8-3 / 7-8-12 / 7-8-11 / 7-8-4 / 7-8-5 / 7-8-9 / 7-3-12",
+                      "size": "xs",
+                      "color": "#4a4a8a",
+                      "margin": "xs",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "3連単: 7→8→3 / 7→3→8 / 7→8→12 / 7→8→11 / 7→12→8 / 7→8→4 / 7→8→5",
+                      "size": "xs",
+                      "color": "#7a3a3a",
+                      "margin": "xs",
+                      "wrap": true
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "box",
+              "layout": "horizontal",
+              "paddingStart": "14px",
+              "paddingEnd": "14px",
+              "paddingTop": "7px",
+              "paddingBottom": "7px",
+              "contents": [
+                {
+                  "type": "text",
+                  "text": "10R",
+                  "size": "sm",
+                  "color": "#999999",
+                  "flex": 0
+                },
+                {
+                  "type": "box",
+                  "layout": "vertical",
+                  "flex": 1,
+                  "margin": "md",
+                  "contents": [
+                    {
+                      "type": "text",
+                      "text": "△ 14 メイショウバルク",
+                      "size": "sm",
+                      "color": "#999999",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "33.0%  差+4.0%  対抗28.9%",
+                      "size": "xs",
+                      "color": "#bbbbbb",
+                      "margin": "xs",
+                      "wrap": true
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "box",
+              "layout": "horizontal",
+              "paddingStart": "14px",
+              "paddingEnd": "14px",
+              "paddingTop": "7px",
+              "paddingBottom": "7px",
+              "contents": [
+                {
+                  "type": "text",
+                  "text": "11R",
+                  "size": "sm",
+                  "color": "#999999",
+                  "flex": 0
+                },
+                {
+                  "type": "box",
+                  "layout": "vertical",
+                  "flex": 1,
+                  "margin": "md",
+                  "contents": [
+                    {
+                      "type": "text",
+                      "text": "△ 14 サクラファレル",
+                      "size": "sm",
+                      "color": "#999999",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "37.1%  差+4.6%  対抗32.5%",
+                      "size": "xs",
+                      "color": "#bbbbbb",
+                      "margin": "xs",
+                      "wrap": true
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "box",
+              "layout": "horizontal",
+              "paddingStart": "14px",
+              "paddingEnd": "14px",
+              "paddingTop": "7px",
+              "paddingBottom": "7px",
+              "contents": [
+                {
+                  "type": "text",
+                  "text": "12R",
+                  "size": "sm",
+                  "color": "#999999",
+                  "flex": 0
+                },
+                {
+                  "type": "box",
+                  "layout": "vertical",
+                  "flex": 1,
+                  "margin": "md",
+                  "contents": [
+                    {
+                      "type": "text",
+                      "text": "△ 7 ヴィンブルレー",
+                      "size": "sm",
+                      "color": "#999999",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "16.3%  差+1.2%  対抗15.1%",
+                      "size": "xs",
+                      "color": "#bbbbbb",
+                      "margin": "xs",
+                      "wrap": true
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "separator"
+            }
+          ]
+        },
+        "footer": {
+          "type": "box",
+          "layout": "vertical",
+          "backgroundColor": "#f5f5f5",
+          "paddingAll": "10px",
+          "contents": [
+            {
+              "type": "text",
+              "text": "◎1R  ○2R  △9R  計12R",
+              "size": "xs",
+              "color": "#888888",
+              "align": "center"
+            }
+          ]
+        }
+      },
+      {
+        "type": "bubble",
+        "size": "mega",
+        "header": {
+          "type": "box",
+          "layout": "vertical",
+          "backgroundColor": "#6b4c9a",
+          "paddingAll": "16px",
+          "contents": [
+            {
+              "type": "text",
+              "text": "京都",
+              "weight": "bold",
+              "color": "#ffffff",
+              "size": "lg"
+            },
+            {
+              "type": "text",
+              "text": "2026年5月9日（土）",
+              "color": "#ffffff99",
+              "size": "xs",
+              "margin": "xs"
+            }
+          ]
+        },
+        "body": {
+          "type": "box",
+          "layout": "vertical",
+          "spacing": "none",
+          "paddingAll": "0px",
+          "contents": [
+            {
+              "type": "separator"
+            },
+            {
+              "type": "box",
+              "layout": "horizontal",
+              "paddingStart": "14px",
+              "paddingEnd": "14px",
+              "paddingTop": "7px",
+              "paddingBottom": "7px",
+              "contents": [
+                {
+                  "type": "text",
+                  "text": " 1R",
+                  "size": "sm",
+                  "color": "#999999",
+                  "flex": 0
+                },
+                {
+                  "type": "box",
+                  "layout": "vertical",
+                  "flex": 1,
+                  "margin": "md",
+                  "contents": [
+                    {
+                      "type": "text",
+                      "text": "△ 3 マクアケ",
+                      "size": "sm",
+                      "color": "#999999",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "20.3%  差+2.2%  対抗18.1%",
+                      "size": "xs",
+                      "color": "#bbbbbb",
+                      "margin": "xs",
+                      "wrap": true
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "box",
+              "layout": "horizontal",
+              "paddingStart": "14px",
+              "paddingEnd": "14px",
+              "paddingTop": "7px",
+              "paddingBottom": "7px",
+              "contents": [
+                {
+                  "type": "text",
+                  "text": " 2R",
+                  "size": "sm",
+                  "color": "#999999",
+                  "flex": 0
+                },
+                {
+                  "type": "box",
+                  "layout": "vertical",
+                  "flex": 1,
+                  "margin": "md",
+                  "contents": [
+                    {
+                      "type": "text",
+                      "text": "△ 4 ワンダーゾルダート",
+                      "size": "sm",
+                      "color": "#999999",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "16.2%  差+9.7%  対抗6.5%",
+                      "size": "xs",
+                      "color": "#bbbbbb",
+                      "margin": "xs",
+                      "wrap": true
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "box",
+              "layout": "horizontal",
+              "paddingStart": "14px",
+              "paddingEnd": "14px",
+              "paddingTop": "7px",
+              "paddingBottom": "7px",
+              "contents": [
+                {
+                  "type": "text",
+                  "text": " 3R",
+                  "size": "sm",
+                  "color": "#999999",
+                  "flex": 0
+                },
+                {
+                  "type": "box",
+                  "layout": "vertical",
+                  "flex": 1,
+                  "margin": "md",
+                  "contents": [
+                    {
+                      "type": "text",
+                      "text": "△ 3 モンシーク",
+                      "size": "sm",
+                      "color": "#999999",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "57.1%  差+38.8%  対抗18.3%",
+                      "size": "xs",
+                      "color": "#bbbbbb",
+                      "margin": "xs",
+                      "wrap": true
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "box",
+              "layout": "horizontal",
+              "paddingStart": "14px",
+              "paddingEnd": "14px",
+              "paddingTop": "7px",
+              "paddingBottom": "7px",
+              "contents": [
+                {
+                  "type": "text",
+                  "text": " 4R",
+                  "size": "sm",
+                  "color": "#999999",
+                  "flex": 0
+                },
+                {
+                  "type": "box",
+                  "layout": "vertical",
+                  "flex": 1,
+                  "margin": "md",
+                  "contents": [
+                    {
+                      "type": "text",
+                      "text": "△ 6 ティタノマキア",
+                      "size": "sm",
+                      "color": "#999999",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "20.0%  差+7.5%  対抗12.5%",
+                      "size": "xs",
+                      "color": "#bbbbbb",
+                      "margin": "xs",
+                      "wrap": true
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "box",
+              "layout": "horizontal",
+              "paddingStart": "14px",
+              "paddingEnd": "14px",
+              "paddingTop": "7px",
+              "paddingBottom": "7px",
+              "contents": [
+                {
+                  "type": "text",
+                  "text": " 5R",
+                  "size": "sm",
+                  "color": "#999999",
+                  "flex": 0
+                },
+                {
+                  "type": "box",
+                  "layout": "vertical",
+                  "flex": 1,
+                  "margin": "md",
+                  "contents": [
+                    {
+                      "type": "text",
+                      "text": "△ 3 ダークマルス",
+                      "size": "sm",
+                      "color": "#999999",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "28.5%  差+8.3%  対抗20.2%",
+                      "size": "xs",
+                      "color": "#bbbbbb",
+                      "margin": "xs",
+                      "wrap": true
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "box",
+              "layout": "horizontal",
+              "paddingStart": "14px",
+              "paddingEnd": "14px",
+              "paddingTop": "7px",
+              "paddingBottom": "7px",
+              "contents": [
+                {
+                  "type": "text",
+                  "text": " 6R",
+                  "size": "sm",
+                  "color": "#999999",
+                  "flex": 0
+                },
+                {
+                  "type": "box",
+                  "layout": "vertical",
+                  "flex": 1,
+                  "margin": "md",
+                  "contents": [
+                    {
+                      "type": "text",
+                      "text": "△ 7 マメタンク",
+                      "size": "sm",
+                      "color": "#999999",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "17.4%  差+1.3%  対抗16.2%",
+                      "size": "xs",
+                      "color": "#bbbbbb",
+                      "margin": "xs",
+                      "wrap": true
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "box",
+              "layout": "horizontal",
+              "paddingStart": "14px",
+              "paddingEnd": "14px",
+              "paddingTop": "7px",
+              "paddingBottom": "7px",
+              "contents": [
+                {
+                  "type": "text",
+                  "text": " 7R",
+                  "size": "sm",
+                  "color": "#999999",
+                  "flex": 0
+                },
+                {
+                  "type": "box",
+                  "layout": "vertical",
+                  "flex": 1,
+                  "margin": "md",
+                  "contents": [
+                    {
+                      "type": "text",
+                      "text": "△ 11 メイショウコナン",
+                      "size": "sm",
+                      "color": "#999999",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "10.7%  差+0.9%  対抗9.9%",
+                      "size": "xs",
+                      "color": "#bbbbbb",
+                      "margin": "xs",
+                      "wrap": true
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "box",
+              "layout": "horizontal",
+              "paddingStart": "14px",
+              "paddingEnd": "14px",
+              "paddingTop": "7px",
+              "paddingBottom": "7px",
+              "contents": [
+                {
+                  "type": "text",
+                  "text": " 8R",
+                  "size": "sm",
+                  "color": "#999999",
+                  "flex": 0
+                },
+                {
+                  "type": "box",
+                  "layout": "vertical",
+                  "flex": 1,
+                  "margin": "md",
+                  "contents": [
+                    {
+                      "type": "text",
+                      "text": "△ 1 ララバッカナール",
+                      "size": "sm",
+                      "color": "#999999",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "26.8%  差+13.1%  対抗13.7%",
+                      "size": "xs",
+                      "color": "#bbbbbb",
+                      "margin": "xs",
+                      "wrap": true
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "box",
+              "layout": "horizontal",
+              "paddingStart": "14px",
+              "paddingEnd": "14px",
+              "paddingTop": "7px",
+              "paddingBottom": "7px",
+              "contents": [
+                {
+                  "type": "text",
+                  "text": " 9R",
+                  "size": "sm",
+                  "color": "#999999",
+                  "flex": 0
+                },
+                {
+                  "type": "box",
+                  "layout": "vertical",
+                  "flex": 1,
+                  "margin": "md",
+                  "contents": [
+                    {
+                      "type": "text",
+                      "text": "△ 8 ダガーリング",
+                      "size": "sm",
+                      "color": "#999999",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "30.3%  差+2.3%  対抗28.0%",
+                      "size": "xs",
+                      "color": "#bbbbbb",
+                      "margin": "xs",
+                      "wrap": true
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "box",
+              "layout": "horizontal",
+              "paddingStart": "14px",
+              "paddingEnd": "14px",
+              "paddingTop": "7px",
+              "paddingBottom": "7px",
+              "contents": [
+                {
+                  "type": "text",
+                  "text": "10R",
+                  "size": "sm",
+                  "color": "#999999",
+                  "flex": 0
+                },
+                {
+                  "type": "box",
+                  "layout": "vertical",
+                  "flex": 1,
+                  "margin": "md",
+                  "contents": [
+                    {
+                      "type": "text",
+                      "text": "△ 5 アオイタケル",
+                      "size": "sm",
+                      "color": "#999999",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "47.7%  差+20.5%  対抗27.2%",
+                      "size": "xs",
+                      "color": "#bbbbbb",
+                      "margin": "xs",
+                      "wrap": true
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "box",
+              "layout": "horizontal",
+              "paddingStart": "14px",
+              "paddingEnd": "14px",
+              "paddingTop": "9px",
+              "paddingBottom": "9px",
+              "contents": [
+                {
+                  "type": "text",
+                  "text": "11R",
+                  "size": "sm",
+                  "weight": "bold",
+                  "color": "#1a5533",
+                  "flex": 0
+                },
+                {
+                  "type": "box",
+                  "layout": "vertical",
+                  "flex": 1,
+                  "margin": "md",
+                  "contents": [
+                    {
+                      "type": "text",
+                      "text": "◎15 ベレシート（単・複）",
+                      "size": "sm",
+                      "weight": "bold",
+                      "color": "#1a5533",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "49.0%  差+21.4%  対抗27.5%",
+                      "size": "xs",
+                      "color": "#888888",
+                      "margin": "xs",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "馬連: 15-2 / 1 / 5",
+                      "size": "xs",
+                      "color": "#555555",
+                      "margin": "xs",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "馬単: 15→12 / 15→16 / 15→10",
+                      "size": "xs",
+                      "color": "#7a5500",
+                      "margin": "xs",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "3連複: 15-2-1 / 15-2-8 / 15-2-5 / 15-2-10 / 15-2-12 / 15-2-16 / 15-1-8",
+                      "size": "xs",
+                      "color": "#4a4a8a",
+                      "margin": "xs",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "3連単: 15→2→1 / 15→2→8 / 15→2→5 / 15→1→2 / 15→2→10 / 15→2→12 / 15→2→16",
+                      "size": "xs",
+                      "color": "#7a3a3a",
+                      "margin": "xs",
+                      "wrap": true
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "box",
+              "layout": "horizontal",
+              "paddingStart": "14px",
+              "paddingEnd": "14px",
+              "paddingTop": "7px",
+              "paddingBottom": "7px",
+              "contents": [
+                {
+                  "type": "text",
+                  "text": "12R",
+                  "size": "sm",
+                  "color": "#999999",
+                  "flex": 0
+                },
+                {
+                  "type": "box",
+                  "layout": "vertical",
+                  "flex": 1,
+                  "margin": "md",
+                  "contents": [
+                    {
+                      "type": "text",
+                      "text": "△ 7 ニホンピロデヴィン",
+                      "size": "sm",
+                      "color": "#999999",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "32.0%  差+12.5%  対抗19.5%",
+                      "size": "xs",
+                      "color": "#bbbbbb",
+                      "margin": "xs",
+                      "wrap": true
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "separator"
+            }
+          ]
+        },
+        "footer": {
+          "type": "box",
+          "layout": "vertical",
+          "backgroundColor": "#f5f5f5",
+          "paddingAll": "10px",
+          "contents": [
+            {
+              "type": "text",
+              "text": "◎1R  ○0R  △11R  計12R",
+              "size": "xs",
+              "color": "#888888",
+              "align": "center"
+            }
+          ]
+        }
+      },
+      {
+        "type": "bubble",
+        "size": "mega",
+        "header": {
+          "type": "box",
+          "layout": "vertical",
+          "backgroundColor": "#8b4513",
+          "paddingAll": "16px",
+          "contents": [
+            {
+              "type": "text",
+              "text": "新潟",
+              "weight": "bold",
+              "color": "#ffffff",
+              "size": "lg"
+            },
+            {
+              "type": "text",
+              "text": "2026年5月9日（土）",
+              "color": "#ffffff99",
+              "size": "xs",
+              "margin": "xs"
+            }
+          ]
+        },
+        "body": {
+          "type": "box",
+          "layout": "vertical",
+          "spacing": "none",
+          "paddingAll": "0px",
+          "contents": [
+            {
+              "type": "separator"
+            },
+            {
+              "type": "box",
+              "layout": "horizontal",
+              "paddingStart": "14px",
+              "paddingEnd": "14px",
+              "paddingTop": "7px",
+              "paddingBottom": "7px",
+              "contents": [
+                {
+                  "type": "text",
+                  "text": " 1R",
+                  "size": "sm",
+                  "color": "#999999",
+                  "flex": 0
+                },
+                {
+                  "type": "box",
+                  "layout": "vertical",
+                  "flex": 1,
+                  "margin": "md",
+                  "contents": [
+                    {
+                      "type": "text",
+                      "text": "△ 10 ソレルビュレット",
+                      "size": "sm",
+                      "color": "#999999",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "8.0%  差+0.1%  対抗7.8%",
+                      "size": "xs",
+                      "color": "#bbbbbb",
+                      "margin": "xs",
+                      "wrap": true
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "box",
+              "layout": "horizontal",
+              "paddingStart": "14px",
+              "paddingEnd": "14px",
+              "paddingTop": "7px",
+              "paddingBottom": "7px",
+              "contents": [
+                {
+                  "type": "text",
+                  "text": " 2R",
+                  "size": "sm",
+                  "color": "#999999",
+                  "flex": 0
+                },
+                {
+                  "type": "box",
+                  "layout": "vertical",
+                  "flex": 1,
+                  "margin": "md",
+                  "contents": [
+                    {
+                      "type": "text",
+                      "text": "△ 2 セブンワンダーズ",
+                      "size": "sm",
+                      "color": "#999999",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "11.9%  差+0.6%  対抗11.3%",
+                      "size": "xs",
+                      "color": "#bbbbbb",
+                      "margin": "xs",
+                      "wrap": true
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "box",
+              "layout": "horizontal",
+              "paddingStart": "14px",
+              "paddingEnd": "14px",
+              "paddingTop": "7px",
+              "paddingBottom": "7px",
+              "contents": [
+                {
+                  "type": "text",
+                  "text": " 3R",
+                  "size": "sm",
+                  "color": "#999999",
+                  "flex": 0
+                },
+                {
+                  "type": "box",
+                  "layout": "vertical",
+                  "flex": 1,
+                  "margin": "md",
+                  "contents": [
+                    {
+                      "type": "text",
+                      "text": "△ 10 ローズオブジャパン",
+                      "size": "sm",
+                      "color": "#999999",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "17.6%  差+4.8%  対抗12.8%",
+                      "size": "xs",
+                      "color": "#bbbbbb",
+                      "margin": "xs",
+                      "wrap": true
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "box",
+              "layout": "horizontal",
+              "paddingStart": "14px",
+              "paddingEnd": "14px",
+              "paddingTop": "7px",
+              "paddingBottom": "7px",
+              "contents": [
+                {
+                  "type": "text",
+                  "text": " 4R",
+                  "size": "sm",
+                  "color": "#999999",
+                  "flex": 0
+                },
+                {
+                  "type": "box",
+                  "layout": "vertical",
+                  "flex": 1,
+                  "margin": "md",
+                  "contents": [
+                    {
+                      "type": "text",
+                      "text": "△ 6 ロードリベラシオン",
+                      "size": "sm",
+                      "color": "#999999",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "8.8%  差+1.8%  対抗7.0%",
+                      "size": "xs",
+                      "color": "#bbbbbb",
+                      "margin": "xs",
+                      "wrap": true
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "box",
+              "layout": "horizontal",
+              "paddingStart": "14px",
+              "paddingEnd": "14px",
+              "paddingTop": "7px",
+              "paddingBottom": "7px",
+              "contents": [
+                {
+                  "type": "text",
+                  "text": " 5R",
+                  "size": "sm",
+                  "color": "#999999",
+                  "flex": 0
+                },
+                {
+                  "type": "box",
+                  "layout": "vertical",
+                  "flex": 1,
+                  "margin": "md",
+                  "contents": [
+                    {
+                      "type": "text",
+                      "text": "△ 3 ザムーン",
+                      "size": "sm",
+                      "color": "#999999",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "13.3%  差+7.1%  対抗6.3%",
+                      "size": "xs",
+                      "color": "#bbbbbb",
+                      "margin": "xs",
+                      "wrap": true
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "box",
+              "layout": "horizontal",
+              "paddingStart": "14px",
+              "paddingEnd": "14px",
+              "paddingTop": "7px",
+              "paddingBottom": "7px",
+              "contents": [
+                {
+                  "type": "text",
+                  "text": " 6R",
+                  "size": "sm",
+                  "color": "#999999",
+                  "flex": 0
+                },
+                {
+                  "type": "box",
+                  "layout": "vertical",
+                  "flex": 1,
+                  "margin": "md",
+                  "contents": [
+                    {
+                      "type": "text",
+                      "text": "△ 13 ダンツウルス",
+                      "size": "sm",
+                      "color": "#999999",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "14.7%  差+5.1%  対抗9.6%",
+                      "size": "xs",
+                      "color": "#bbbbbb",
+                      "margin": "xs",
+                      "wrap": true
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "box",
+              "layout": "horizontal",
+              "paddingStart": "14px",
+              "paddingEnd": "14px",
+              "paddingTop": "7px",
+              "paddingBottom": "7px",
+              "contents": [
+                {
+                  "type": "text",
+                  "text": " 7R",
+                  "size": "sm",
+                  "color": "#999999",
+                  "flex": 0
+                },
+                {
+                  "type": "box",
+                  "layout": "vertical",
+                  "flex": 1,
+                  "margin": "md",
+                  "contents": [
+                    {
+                      "type": "text",
+                      "text": "△ 12 ピコテンダー",
+                      "size": "sm",
+                      "color": "#999999",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "11.1%  差+1.9%  対抗9.3%",
+                      "size": "xs",
+                      "color": "#bbbbbb",
+                      "margin": "xs",
+                      "wrap": true
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "box",
+              "layout": "horizontal",
+              "paddingStart": "14px",
+              "paddingEnd": "14px",
+              "paddingTop": "7px",
+              "paddingBottom": "7px",
+              "contents": [
+                {
+                  "type": "text",
+                  "text": " 8R",
+                  "size": "sm",
+                  "color": "#999999",
+                  "flex": 0
+                },
+                {
+                  "type": "box",
+                  "layout": "vertical",
+                  "flex": 1,
+                  "margin": "md",
+                  "contents": [
+                    {
+                      "type": "text",
+                      "text": "△ 8 カルネヴァーレ",
+                      "size": "sm",
+                      "color": "#999999",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "9.6%  差+1.5%  対抗8.2%",
+                      "size": "xs",
+                      "color": "#bbbbbb",
+                      "margin": "xs",
+                      "wrap": true
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "box",
+              "layout": "horizontal",
+              "paddingStart": "14px",
+              "paddingEnd": "14px",
+              "paddingTop": "9px",
+              "paddingBottom": "9px",
+              "contents": [
+                {
+                  "type": "text",
+                  "text": " 9R",
+                  "size": "sm",
+                  "weight": "bold",
+                  "color": "#7a5500",
+                  "flex": 0
+                },
+                {
+                  "type": "box",
+                  "layout": "vertical",
+                  "flex": 1,
+                  "margin": "md",
+                  "contents": [
+                    {
+                      "type": "text",
+                      "text": "○12 デンプシー（単・複）",
+                      "size": "sm",
+                      "weight": "bold",
+                      "color": "#7a5500",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "32.9%  差+18.6%  対抗14.3%",
+                      "size": "xs",
+                      "color": "#888888",
+                      "margin": "xs",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "馬連: 12-1 / 11 / 13",
+                      "size": "xs",
+                      "color": "#555555",
+                      "margin": "xs",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "馬単: 12→1 / 12→11 / 12→13",
+                      "size": "xs",
+                      "color": "#7a5500",
+                      "margin": "xs",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "3連複: 12-1-11 / 12-1-13 / 12-1-2 / 12-1-14 / 12-1-8 / 12-1-7 / 12-11-13",
+                      "size": "xs",
+                      "color": "#4a4a8a",
+                      "margin": "xs",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "3連単: 12→1→11 / 12→11→1 / 12→1→13 / 12→1→2 / 12→1→14 / 12→1→8 / 12→13→1",
+                      "size": "xs",
+                      "color": "#7a3a3a",
+                      "margin": "xs",
+                      "wrap": true
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "box",
+              "layout": "horizontal",
+              "paddingStart": "14px",
+              "paddingEnd": "14px",
+              "paddingTop": "7px",
+              "paddingBottom": "7px",
+              "contents": [
+                {
+                  "type": "text",
+                  "text": "10R",
+                  "size": "sm",
+                  "color": "#999999",
+                  "flex": 0
+                },
+                {
+                  "type": "box",
+                  "layout": "vertical",
+                  "flex": 1,
+                  "margin": "md",
+                  "contents": [
+                    {
+                      "type": "text",
+                      "text": "△ 10 シャインフリーリー",
+                      "size": "sm",
+                      "color": "#999999",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "8.0%  差+0.4%  対抗7.6%",
+                      "size": "xs",
+                      "color": "#bbbbbb",
+                      "margin": "xs",
+                      "wrap": true
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "box",
+              "layout": "horizontal",
+              "paddingStart": "14px",
+              "paddingEnd": "14px",
+              "paddingTop": "7px",
+              "paddingBottom": "7px",
+              "contents": [
+                {
+                  "type": "text",
+                  "text": "11R",
+                  "size": "sm",
+                  "color": "#999999",
+                  "flex": 0
+                },
+                {
+                  "type": "box",
+                  "layout": "vertical",
+                  "flex": 1,
+                  "margin": "md",
+                  "contents": [
+                    {
+                      "type": "text",
+                      "text": "△ 8 ジュンヴァンケット",
+                      "size": "sm",
+                      "color": "#999999",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "13.8%  差+3.1%  対抗10.7%",
+                      "size": "xs",
+                      "color": "#bbbbbb",
+                      "margin": "xs",
+                      "wrap": true
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "separator"
+            },
+            {
+              "type": "box",
+              "layout": "horizontal",
+              "paddingStart": "14px",
+              "paddingEnd": "14px",
+              "paddingTop": "7px",
+              "paddingBottom": "7px",
+              "contents": [
+                {
+                  "type": "text",
+                  "text": "12R",
+                  "size": "sm",
+                  "color": "#999999",
+                  "flex": 0
+                },
+                {
+                  "type": "box",
+                  "layout": "vertical",
+                  "flex": 1,
+                  "margin": "md",
+                  "contents": [
+                    {
+                      "type": "text",
+                      "text": "△ 11 ハイクオリティ",
+                      "size": "sm",
+                      "color": "#999999",
+                      "wrap": true
+                    },
+                    {
+                      "type": "text",
+                      "text": "15.2%  差+5.3%  対抗9.9%",
+                      "size": "xs",
+                      "color": "#bbbbbb",
+                      "margin": "xs",
+                      "wrap": true
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "type": "separator"
+            }
+          ]
+        },
+        "footer": {
+          "type": "box",
+          "layout": "vertical",
+          "backgroundColor": "#f5f5f5",
+          "paddingAll": "10px",
+          "contents": [
+            {
+              "type": "text",
+              "text": "◎0R  ○1R  △11R  計12R",
+              "size": "xs",
+              "color": "#888888",
+              "align": "center"
+            }
+          ]
+        }
+      }
+    ]
+  }
+}
