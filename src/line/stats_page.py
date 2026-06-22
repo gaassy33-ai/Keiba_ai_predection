@@ -1,11 +1,15 @@
 """
-AI成績・回収率ページを docs/stats.html として生成する。
+AI成績・回収率ページを docs/stats.html として生成する（馬連・軸馬流し方式）。
 
 GitHub Pages で配信: https://gaassy33-ai.github.io/Keiba_ai_predection/stats.html
 
+2026-06-22: 旧システム（単勝/馬単・honmei形式, docs/predictions_log.csv）から
+新システム（馬連・軸馬流し方式, data/logs/predictions/）への参照に移行。
+全期間集計はこの移行日以降のデータのみを対象とする（旧履歴は引き継がない）。
+
 呼び出し:
     from src.line.stats_page import generate_stats_page
-    generate_stats_page()
+    generate_stats_page(df)   # df: src.results.store.enrich() 済みDataFrame
 """
 
 from __future__ import annotations
@@ -15,23 +19,17 @@ from pathlib import Path
 
 import pandas as pd
 
-BASE_DIR         = Path(__file__).resolve().parents[2]
-PREDICTIONS_LOG  = BASE_DIR / "docs" / "predictions_log.csv"
-OUTPUT_PATH      = BASE_DIR / "docs" / "stats.html"
+BASE_DIR    = Path(__file__).resolve().parents[2]
+OUTPUT_PATH = BASE_DIR / "docs" / "stats.html"
 
 
-def _load_df() -> pd.DataFrame:
-    if not PREDICTIONS_LOG.exists():
-        return pd.DataFrame()
-    df = pd.read_csv(PREDICTIONS_LOG, parse_dates=["date"])
-    df["date_only"] = df["date"].dt.date
-    return df
-
-
-def generate_stats_page(output_path: Path = OUTPUT_PATH) -> None:
-    """predictions_log.csv を読み込んで stats.html を生成する。"""
-    df = _load_df()
+def generate_stats_page(df: pd.DataFrame, output_path: Path = OUTPUT_PATH) -> None:
+    """src.results.store.enrich() 済みDataFrameから stats.html を生成する。"""
     today = date.today()
+    if not df.empty:
+        df = df[df["hit"].notna()].copy()
+        df["date"] = pd.to_datetime(df["src_date"])
+        df["date_only"] = df["date"].dt.date
 
     # ── 全期間集計 ──────────────────────────────────────────────
     if df.empty:
@@ -85,16 +83,17 @@ def generate_stats_page(output_path: Path = OUTPUT_PATH) -> None:
             net     = payout - 100
             icon    = "✅" if hit else "❌"
             net_str = f'<span class="pos">¥{net:+,}</span>' if hit else f'<span class="neg">¥-100</span>'
-            race_name = str(row.get("race_name", ""))[:10]
-            hon_num  = int(row.get("honmei_num", 0))
-            hon_name = str(row.get("honmei_name", ""))
+            race_name  = str(row.get("race_name", ""))[:10]
+            axis_num   = row.get("horse_num_i", "")
+            axis_name  = str(row.get("horse_name_i", ""))
+            partner_name = str(row.get("horse_name_j", ""))
             d        = row["date"].strftime("%-m/%-d") if hasattr(row["date"], "strftime") else str(row["date"])[:5]
             recent_rows += f"""
             <tr>
               <td>{d}</td>
               <td>{icon}</td>
               <td class="race-name">{race_name}</td>
-              <td>◎{hon_num} {hon_name}</td>
+              <td>軸{axis_num} {axis_name}-{partner_name}</td>
               <td class="amount">{net_str}</td>
             </tr>"""
 
@@ -194,7 +193,7 @@ td.amount {{ text-align: right; font-weight: bold; }}
 <h2>全期間</h2>
 <div class="kpi-grid">
   <div class="kpi">
-    <div class="kpi-label">総レース数</div>
+    <div class="kpi-label">総購入点数</div>
     <div class="kpi-value neutral">{total_races}<span style="font-size:13px">R</span></div>
   </div>
   <div class="kpi">
@@ -246,7 +245,7 @@ td.amount {{ text-align: right; font-weight: bold; }}
         <th>日付</th>
         <th></th>
         <th>レース</th>
-        <th>◎本命</th>
+        <th>馬連（軸-相手）</th>
         <th style="text-align:right">収支</th>
       </tr>
     </thead>

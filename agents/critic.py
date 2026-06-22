@@ -143,19 +143,19 @@ class Critic(AgentBase):
             "",
         ]
 
-        # 当日の成績（振り返りデータ）
+        # 当日の成績（振り返りデータ・馬連）
         if review:
             analysis = review.get("analysis", {})
-            n = analysis.get("buy_races", 0)
-            hit = analysis.get("tansho_hit", 0)
-            roi = analysis.get("tansho_roi", 0)
+            n = analysis.get("buy_bets", 0)
+            hit = analysis.get("hit_bets", 0)
+            roi = analysis.get("roi", 0)
             lines += [
-                "## 当日の成績",
-                f"- 買い対象: {n}レース",
-                f"- 単勝的中: {hit}レース（的中率: {hit/n:.1%}）" if n else "- データなし",
-                f"- 単勝ROI: {roi:.1%}" if n else "",
-                f"- 惜しいレース(2〜3着): {analysis.get('near_miss_races', 0)}R",
-                f"- 大敗(6着以下): {analysis.get('upset_races', 0)}R",
+                "## 当日の成績（馬連・軸馬流し方式）",
+                f"- 購入: {n}点（{analysis.get('buy_races', 0)}レース）",
+                f"- 的中: {hit}点（点数的中率: {hit/n:.1%}）" if n else "- データなし",
+                f"- ROI: {roi:.1%}" if n else "",
+                f"- 軸が飛んだレース: {analysis.get('axis_missed_races', 0)}R",
+                f"- 軸は残ったがヒモ抜けレース: {analysis.get('partner_missed_races', 0)}R",
             ]
             # ルールベースのヒント
             hints = analysis.get("hints", [])
@@ -165,37 +165,39 @@ class Critic(AgentBase):
                 for h in hints:
                     lines.append(f"- {h}")
 
-            # 各レースの詳細
-            predictions = review.get("predictions", [])
-            ok_preds = [p for p in predictions if p.get("status") == "ok"]
-            if ok_preds:
+            # 各買い目の詳細
+            bets = review.get("bets", [])
+            ok_bets = [b for b in bets if b.get("hit") is not None]
+            if ok_bets:
                 lines.append("")
-                lines.append("### 当日の各レース結果")
-                for p in ok_preds:
-                    hit_str = "◎的中" if p.get("tansho_hit") else f"{p.get('actual_pos', '?')}着"
+                lines.append("### 当日の各買い目結果")
+                for b in ok_bets:
+                    hit_str = "◎的中" if b.get("hit") else "不的中"
                     lines.append(
-                        f"- {p.get('race_name', p.get('race_id', '?'))}: "
-                        f"{p.get('honmei_name', '?')}（確率{float(p.get('honmei_prob', 0)):.1%}）→ {hit_str}"
+                        f"- {b.get('race_name', b.get('race_id', '?'))}: "
+                        f"{b.get('horse_name_i', '?')}-{b.get('horse_name_j', '?')}"
+                        f"（EV{float(b.get('ev', 0)):.2f}）→ {hit_str}"
                     )
 
         lines.append("")
 
-        # 直近の精度データ（データマスターから）
+        # 直近の精度データ（データマスターから・馬連）
         if context:
             acc = context.get("accuracy_summary", {})
-            if acc.get("buy_races", 0) > 0:
+            if acc.get("buy_bets", 0) > 0:
+                roi = acc.get("roi")
                 lines += [
-                    "## 直近8週間の精度",
-                    f"- 単勝的中率: {acc.get('tansho_hit_rate', 0):.1%}",
-                    f"- 単勝平均回収: {acc.get('tansho_roi_avg', '-')}円",
+                    "## 直近8週間の精度（馬連）",
+                    f"- 的中率: {acc.get('hit_rate', 0):.1%}",
+                    f"- ROI: {roi:.1%}" if roi is not None else "- ROI: -",
                 ]
 
-            # 特徴量重要度
+            # 特徴量重要度（LTRモデル）
             feat = context.get("feature_importance", {})
-            top5 = feat.get("top5_win", [])
+            top5 = feat.get("top5", [])
             if top5:
                 lines.append("")
-                lines.append("## 現在のモデル特徴量重要度 Top5")
+                lines.append("## 現在のLTRモデル特徴量重要度 Top5")
                 for f in top5:
                     lines.append(f"- {f['feature']}: {f['gain_pct']:.1f}%")
 
@@ -205,7 +207,7 @@ class Critic(AgentBase):
                 lines.append("")
                 lines.append("## 会場別精度（直近8週）")
                 for v, d in sorted(venue_acc.items(), key=lambda x: -x[1]["hit_rate"])[:5]:
-                    lines.append(f"- {v}: 的中率{d['hit_rate']:.1%}（{d['races']}R）")
+                    lines.append(f"- {v}: 的中率{d['hit_rate']:.1%}（{d['bets']}点）")
 
         lines += [
             "",

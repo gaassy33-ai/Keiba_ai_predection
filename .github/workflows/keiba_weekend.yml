@@ -164,6 +164,15 @@ jobs:
           git diff --cached --quiet || git commit -m "chore: 朝バッチ 全レース予想ページ更新 [skip ci]"
           git push || true
 
+      - name: data/logs アーカイブ（推論結果・Gatekeeper棄却ログ等）
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: morning-data-logs-${{ github.run_id }}
+          path: data/logs/
+          retention-days: 30
+          if-no-files-found: ignore
+
       - name: Upload logs on failure
         if: failure()
         uses: actions/upload-artifact@v4
@@ -222,6 +231,17 @@ jobs:
             --phase evening \
             --date "${{ steps.resolve_date.outputs.date }}"
 
+      - name: data/logs・data/agents アーカイブ（振り返り君・評論家の出力）
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: evening-data-logs-${{ github.run_id }}
+          path: |
+            data/logs/
+            data/agents/
+          retention-days: 30
+          if-no-files-found: ignore
+
       - name: Upload logs on failure
         if: failure()
         uses: actions/upload-artifact@v4
@@ -274,10 +294,18 @@ jobs:
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           # ファイルが存在する場合のみ add（存在しない場合はスキップ）
-          [ -f docs/predictions_log.csv ] && git add docs/predictions_log.csv || true
-          [ -f docs/stats.html ]          && git add docs/stats.html          || true
+          [ -f docs/stats.html ] && git add docs/stats.html || true
           git diff --cached --quiet || git commit -m "chore: 週末成績集計 [skip ci]"
           git push || true
+
+      - name: data/logs アーカイブ（結果キャッシュ）
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: weekly-summary-data-logs-${{ github.run_id }}
+          path: data/logs/
+          retention-days: 30
+          if-no-files-found: ignore
 
       - name: Upload logs on failure
         if: failure()
