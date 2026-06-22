@@ -69,7 +69,11 @@ betting:
   longshot_odds_max: 30.0
 
   # 推定馬連オッズ上限（控除率 17.5% 反映）
-  est_quinella_odds_max: 50.0
+  #   2026-06-22: PairCalibrator導入後のシビアな確率スケールでは、
+  #   低p_modelのペアがEV≥1.2をクリアするために高い推定オッズを要する
+  #   ケースが多く、50.0倍キャップが馬連本来のバリューゾーン（高配当帯）
+  #   を構造的に切り落としていたため、2026-06-23に150.0へ緩和。
+  est_quinella_odds_max: 150.0
 
   # AI予測馬連確率（P_model）の下限
   #   2026-06-22: PairCalibrator導入によりΣp_model比で約3.7倍縮小
