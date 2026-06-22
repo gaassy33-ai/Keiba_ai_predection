@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import joblib
+from itertools import groupby as _itertools_groupby
 from pathlib import Path
 
 import lightgbm as lgb
@@ -21,6 +22,46 @@ from sklearn.metrics import log_loss, roc_auc_score
 
 from config.settings import settings
 from src.features.engineer import FeatureEngineer
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# LTR ユーティリティ（LTRTrainer から使用）
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _ltr_group_sizes(race_ids: np.ndarray) -> list[int]:
+    """連続する race_id の連長を返す（LightGBM group 引数用）。
+    df が race_id でソート済みであることを前提とする。"""
+    return [sum(1 for _ in g) for _, g in _itertools_groupby(race_ids)]
+
+
+def _ndcg_at_k(scores: np.ndarray, labels: np.ndarray, k: int = 3) -> float:
+    """単一レースの NDCG@k を計算する。"""
+    order = np.argsort(-scores)
+    top_labels = labels[order[:k]]
+    dcg  = sum((2.0 ** lbl - 1.0) / np.log2(i + 2.0) for i, lbl in enumerate(top_labels))
+    ideal = np.sort(labels)[::-1][:k]
+    idcg = sum((2.0 ** lbl - 1.0) / np.log2(i + 2.0) for i, lbl in enumerate(ideal))
+    return dcg / idcg if idcg > 0.0 else 0.0
+
+
+def _mean_ndcg_at_k(
+    scores: np.ndarray,
+    labels: np.ndarray,
+    race_ids: np.ndarray,
+    k: int = 3,
+) -> float:
+    """全レースにわたる平均 NDCG@k を計算する。"""
+    races_seen: list = []
+    seen_set: set = set()
+    for r in race_ids:
+        if r not in seen_set:
+            races_seen.append(r)
+            seen_set.add(r)
+    ndcgs = []
+    for r in races_seen:
+        mask = race_ids == r
+        ndcgs.append(_ndcg_at_k(scores[mask], labels[mask], k))
+    return float(np.mean(ndcgs)) if ndcgs else 0.0
 
 
 class ModelTrainer:
@@ -80,6 +121,7 @@ class ModelTrainer:
         df: pd.DataFrame,
         label_col: str = "is_win",
         group_col: str = "race_id",
+        sample_weight: np.ndarray | None = None,
     ) -> None:
         """
         GroupKFold（race_id でグループ分け）で CV しながら学習。
@@ -92,10 +134,14 @@ class ModelTrainer:
             目的変数のカラム名
         group_col : str
             グループ分けに使うカラム名（data leakage 防止）
+        sample_weight : np.ndarray | None
+            各サンプルの学習重み。None の場合は全サンプル均等重み。
+            時系列重み付け（最近のデータを重視）に使用。
         """
         X = df[self.feature_columns].apply(pd.to_numeric, errors="coerce").fillna(0)
         y = df[label_col].values
         groups = df[group_col].values
+        weights = sample_weight if sample_weight is not None else np.ones(len(y))
 
         gkf = GroupKFold(n_splits=5)
         oof_preds = np.zeros(len(X))
@@ -104,8 +150,9 @@ class ModelTrainer:
         for fold, (train_idx, val_idx) in enumerate(gkf.split(X, y, groups)):
             X_tr, X_val = X.iloc[train_idx], X.iloc[val_idx]
             y_tr, y_val = y[train_idx], y[val_idx]
+            w_tr = weights[train_idx]
 
-            train_set = lgb.Dataset(X_tr, label=y_tr)
+            train_set = lgb.Dataset(X_tr, label=y_tr, weight=w_tr)
             val_set = lgb.Dataset(X_val, label=y_val, reference=train_set)
 
             booster = lgb.train(
@@ -146,8 +193,8 @@ class ModelTrainer:
         )
         self.calibrator = calib
 
-        # 最終モデルは全データで学習
-        full_dataset = lgb.Dataset(X, label=y)
+        # 最終モデルは全データで学習（サンプル重みも反映）
+        full_dataset = lgb.Dataset(X, label=y, weight=weights)
         best_rounds = max(m.best_iteration for m in models)
         self.model = lgb.train(
             self.LGBM_PARAMS,
@@ -161,13 +208,19 @@ class ModelTrainer:
 
         # is_placed モデル（3着以内確率）を追加学習
         if "is_placed" in df.columns:
-            self._fit_place_model(df, group_col)
+            self._fit_place_model(df, group_col, sample_weight=weights)
 
-    def _fit_place_model(self, df: pd.DataFrame, group_col: str = "race_id") -> None:
+    def _fit_place_model(
+        self,
+        df: pd.DataFrame,
+        group_col: str = "race_id",
+        sample_weight: np.ndarray | None = None,
+    ) -> None:
         """is_placed（3着以内）を目的変数としたモデルを学習する。"""
         X = df[self.feature_columns].apply(pd.to_numeric, errors="coerce").fillna(0)
         y = df["is_placed"].values
         groups = df[group_col].values
+        weights = sample_weight if sample_weight is not None else np.ones(len(y))
 
         gkf = GroupKFold(n_splits=5)
         oof_preds = np.zeros(len(X))
@@ -176,7 +229,8 @@ class ModelTrainer:
         for fold, (train_idx, val_idx) in enumerate(gkf.split(X, y, groups)):
             X_tr, X_val = X.iloc[train_idx], X.iloc[val_idx]
             y_tr, y_val = y[train_idx], y[val_idx]
-            train_set = lgb.Dataset(X_tr, label=y_tr)
+            w_tr = weights[train_idx]
+            train_set = lgb.Dataset(X_tr, label=y_tr, weight=w_tr)
             val_set = lgb.Dataset(X_val, label=y_val, reference=train_set)
             booster = lgb.train(
                 self.LGBM_PARAMS,
@@ -212,7 +266,7 @@ class ModelTrainer:
         )
         self.place_calibrator = place_calib
 
-        full_dataset = lgb.Dataset(X, label=y)
+        full_dataset = lgb.Dataset(X, label=y, weight=weights)
         best_rounds = max(m.best_iteration for m in models)
         self.place_model = lgb.train(
             self.LGBM_PARAMS,
@@ -323,6 +377,351 @@ class ModelTrainer:
             calib_info.append("place_calib=あり")
         calib_str = ", ".join(calib_info) if calib_info else "Platt scaling なし（旧モデル）"
         logger.info(f"Model loaded from {path} (org={org}, {calib_str})")
+        return instance
+
+
+class LTRTrainer:
+    """
+    LightGBM LambdaRank による Learning-to-Rank モデル。
+
+    【現行バイナリ分類との根本的な違い】
+    - バイナリ分類 (ModelTrainer): 各馬を独立に評価 → レース間の相対強度を無視
+    - LTR (LTRTrainer)          : レース内の相対的な強さを直接学習 → 同一レース内比較
+
+    【ラベル設計（4段階関連度スコア）】
+    - 1着 = 3  (最高関連度)
+    - 2着 = 2
+    - 3着 = 1
+    - 4着以下 = 0
+
+    【最適化指標】
+    NDCG@3 → top3 に入る馬の順位精度を最大化 → ワイド的中率に直結
+
+    【確率変換】
+    LTR スコア → softmax (Plackett-Luce モデル) → レース内確率
+    → Harville 公式に入力して ワイド/3連複 確率を計算
+    """
+
+    # ── ハイパーパラメータ ────────────────────────────────────────────
+    LGBM_PARAMS: dict = {
+        "objective":                   "lambdarank",
+        "metric":                      "ndcg",
+        "ndcg_eval_at":                [3],
+        "lambdarank_truncation_level": 5,
+        "learning_rate":               0.05,
+        "num_leaves":                  63,
+        "max_depth":                   -1,
+        "min_child_samples":           20,
+        "feature_fraction":            0.8,
+        "bagging_fraction":            0.8,
+        "bagging_freq":                5,
+        "lambda_l1":                   0.1,
+        "lambda_l2":                   0.5,
+        "verbose":                     -1,
+        "n_jobs":                      -1,
+        "random_state":                42,
+    }
+
+    NUM_BOOST_ROUND     = 1000
+    EARLY_STOPPING_ROUNDS = 50
+    N_CV_FOLDS          = 5
+
+    def __init__(self) -> None:
+        self.model: lgb.Booster | None = None
+        self.feature_columns: list[str] = FeatureEngineer.FEATURE_COLUMNS
+        self.oof_ndcg3: float = 0.0    # CV 時の平均 NDCG@3（品質指標）
+        self.temperature: float = 1.0  # Temperature Scaling パラメーター（τ*）
+
+    # ── ラベル生成 ────────────────────────────────────────────────────
+
+    @staticmethod
+    def make_rank_labels(df: pd.DataFrame, pos_col: str = "finish_pos_num") -> np.ndarray:
+        """
+        着順 → 関連度スコア (int32: 0/1/2/3) に変換。
+
+        Parameters
+        ----------
+        df : DataFrame
+            finish_pos_num カラムを含む DataFrame
+        pos_col : str
+            着順（数値）カラム名
+
+        Returns
+        -------
+        np.ndarray of int32
+        """
+        pos = pd.to_numeric(df[pos_col], errors="coerce")
+        labels = np.zeros(len(df), dtype=np.int32)
+        labels[pos == 1] = 3
+        labels[pos == 2] = 2
+        labels[pos == 3] = 1
+        # 4着以下・着外・除外は 0 のまま
+        return labels
+
+    # ── 確率変換 ─────────────────────────────────────────────────────
+
+    @staticmethod
+    def scores_to_probs(scores: np.ndarray, temperature: float = 1.0) -> np.ndarray:
+        """
+        Plackett-Luce モデル: LTR スコア → レース内確率。
+
+        softmax(scores / temperature) を適用し、レース内で合計 1 になる
+        確率ベクトルを返す。Harville 公式への入力として使用。
+
+        Parameters
+        ----------
+        scores : np.ndarray
+            1レース分の LTR raw スコア
+        temperature : float
+            > 1 → 確率を均等化（不確実性増加）
+            < 1 → 確率を集中（最有力馬に集中）
+            デフォルト 1.0（Step 3 でチューニング）
+
+        Returns
+        -------
+        np.ndarray  shape=(n_horses,)  合計 ≈ 1.0
+        """
+        s = np.asarray(scores, dtype=np.float64) / max(temperature, 1e-9)
+        exp_s = np.exp(s - s.max())   # overflow 防止
+        return exp_s / exp_s.sum()
+
+    # ── Temperature Scaling 較正 ──────────────────────────────────────
+
+    @staticmethod
+    def _calibrate_temperature(
+        oof_scores: np.ndarray,
+        race_ids:   np.ndarray,
+        y_win:      np.ndarray,
+    ) -> float:
+        """
+        OOF スコアで negative log-likelihood を最小化し、最適温度 τ* を返す。
+
+        softmax(scores / τ) の τ を [0.5, 5.0] で探索。
+        τ > 1 → 均等化（モデル過信を緩和）
+        τ < 1 → 集中（モデルが過小評価している場合）
+
+        Parameters
+        ----------
+        oof_scores : OOF フォールドで蓄積した LTR raw スコア（全馬）
+        race_ids   : 各サンプルの race_id（同一レースが連続している必要はない）
+        y_win      : 1着馬=1、それ以外=0 のバイナリラベル
+
+        Returns
+        -------
+        float
+            最適温度 τ*
+        """
+        from scipy.optimize import minimize_scalar
+
+        unique_races = np.unique(race_ids)
+
+        def neg_ll(tau: float) -> float:
+            if tau < 1e-9:
+                return 1e9
+            loss = 0.0
+            for rid in unique_races:
+                mask = race_ids == rid
+                probs = LTRTrainer.scores_to_probs(oof_scores[mask], temperature=tau)
+                loss -= float(np.sum(y_win[mask] * np.log(probs + 1e-9)))
+            return loss
+
+        result = minimize_scalar(neg_ll, bounds=(0.5, 5.0), method="bounded")
+        return float(result.x)
+
+    # ── 学習 ─────────────────────────────────────────────────────────
+
+    def fit(self, df: pd.DataFrame, group_col: str = "race_id") -> None:
+        """
+        LambdaRank モデルを GroupKFold CV で学習し、全データで最終モデルを構築する。
+
+        Parameters
+        ----------
+        df : DataFrame
+            FEATURE_COLUMNS + finish_pos_num + race_id を含む
+        group_col : str
+            グループ分けカラム（race_id）
+        """
+        # ── データ前処理 ──────────────────────────────────────────────
+        # LightGBM LambdaRank の要件: 同一グループのサンプルが連続している必要あり
+        df_s = df.sort_values(group_col).reset_index(drop=True)
+
+        X = (
+            df_s[self.feature_columns]
+            .apply(pd.to_numeric, errors="coerce")
+            .fillna(0.0)
+        )
+        y         = self.make_rank_labels(df_s)       # 0/1/2/3
+        race_ids  = df_s[group_col].values
+        grp_sizes = _ltr_group_sizes(race_ids)        # LightGBM group 配列
+
+        logger.info(
+            f"LTR 学習データ: {len(df_s):,} サンプル  "
+            f"{len(grp_sizes):,} レース  "
+            f"label 分布: 0={( y==0).sum():,} 1={(y==1).sum():,} "
+            f"2={(y==2).sum():,} 3={(y==3).sum():,}"
+        )
+
+        # ── GroupKFold CV ─────────────────────────────────────────────
+        gkf = GroupKFold(n_splits=self.N_CV_FOLDS)
+        fold_ndcg3: list[float] = []
+        models: list[lgb.Booster] = []
+        oof_scores = np.zeros(len(df_s), dtype=np.float64)   # temperature 較正用
+
+        for fold, (tr_idx, vl_idx) in enumerate(gkf.split(X, y, race_ids)):
+            X_tr, X_vl = X.iloc[tr_idx], X.iloc[vl_idx]
+            y_tr, y_vl = y[tr_idx], y[vl_idx]
+            r_tr, r_vl = race_ids[tr_idx], race_ids[vl_idx]
+
+            grp_tr = _ltr_group_sizes(r_tr)
+            grp_vl = _ltr_group_sizes(r_vl)
+
+            train_ds = lgb.Dataset(X_tr, label=y_tr, group=grp_tr)
+            val_ds   = lgb.Dataset(X_vl, label=y_vl, group=grp_vl,
+                                   reference=train_ds)
+
+            booster = lgb.train(
+                self.LGBM_PARAMS,
+                train_ds,
+                num_boost_round=self.NUM_BOOST_ROUND,
+                valid_sets=[val_ds],
+                callbacks=[
+                    lgb.early_stopping(self.EARLY_STOPPING_ROUNDS, verbose=False),
+                    lgb.log_evaluation(200),
+                ],
+            )
+
+            vl_scores = booster.predict(X_vl)
+            oof_scores[vl_idx] = vl_scores            # OOF スコアを蓄積
+            ndcg3 = _mean_ndcg_at_k(vl_scores, y_vl, r_vl, k=3)
+            fold_ndcg3.append(ndcg3)
+            models.append(booster)
+            logger.info(
+                f"  Fold {fold+1}/{self.N_CV_FOLDS} | "
+                f"best_iter={booster.best_iteration:4d} | "
+                f"NDCG@3={ndcg3:.4f}"
+            )
+
+        self.oof_ndcg3 = float(np.mean(fold_ndcg3))
+        logger.info(
+            f"OOF NDCG@3 = {self.oof_ndcg3:.4f} "
+            f"± {np.std(fold_ndcg3):.4f}  "
+            f"(fold wise: {[round(v,4) for v in fold_ndcg3]})"
+        )
+
+        # ── Temperature Scaling Calibration ──────────────────────────
+        # OOF スコアで softmax(scores/τ) の τ を最適化し、
+        # モデルの過信（確率集中）を緩和する。
+        y_win = (y == 3).astype(np.float64)  # 1着馬フラグ（ラベル=3）
+        tau_star = self._calibrate_temperature(oof_scores, race_ids, y_win)
+        self.temperature = tau_star
+        logger.info(
+            f"Temperature Scaling 較正完了: τ* = {tau_star:.4f}  "
+            f"（τ>1→均等化, τ<1→集中）"
+        )
+
+        # ── 全データで最終モデルを学習 ────────────────────────────────
+        best_rounds = max(m.best_iteration for m in models)
+        full_ds = lgb.Dataset(X, label=y, group=grp_sizes)
+        self.model = lgb.train(
+            self.LGBM_PARAMS,
+            full_ds,
+            num_boost_round=best_rounds,
+        )
+        logger.info(f"Final LTR model: {best_rounds} rounds  (NDCG@3={self.oof_ndcg3:.4f})")
+        self._log_feature_importance()
+
+    # ── 推論 ─────────────────────────────────────────────────────────
+
+    def predict(self, X: pd.DataFrame) -> np.ndarray:
+        """
+        各馬の LTR raw スコアを返す。
+        確率ではないため、レース内確率への変換は scores_to_probs() を使うこと。
+        """
+        assert self.model is not None, "fit() を先に実行してください"
+        X_num = (
+            X[self.feature_columns]
+            .apply(pd.to_numeric, errors="coerce")
+            .fillna(0.0)
+        )
+        return self.model.predict(X_num)
+
+    # ── 特徴量重要度 ──────────────────────────────────────────────────
+
+    def _log_feature_importance(self, top_n: int = 20) -> None:
+        """特徴量重要度を gain ベースでログ出力する。"""
+        if self.model is None:
+            return
+        gain  = self.model.feature_importance("gain")
+        names = self.model.feature_name()
+        total = gain.sum() or 1.0
+        pairs = sorted(zip(names, gain), key=lambda x: -x[1])
+        logger.info(f"=== LTR Feature Importance (top {top_n}) ===")
+        for feat, g in pairs[:top_n]:
+            logger.info(f"  {feat:<30} gain={g:>8,}  ({g/total*100:>5.1f}%)")
+
+    def save_feature_importance(self, path: Path) -> None:
+        """特徴量重要度を JSON で保存する。"""
+        if self.model is None:
+            return
+        gain  = self.model.feature_importance("gain")
+        split = self.model.feature_importance("split")
+        names = self.model.feature_name()
+        total = gain.sum() or 1.0
+        pairs = sorted(zip(names, gain.tolist(), split.tolist()), key=lambda x: -x[1])
+        payload = {
+            "ltr_model": {
+                "num_trees": self.model.num_trees(),
+                "oof_ndcg3": round(self.oof_ndcg3, 4),
+                "importance": [
+                    {"feature": f, "gain": int(g),
+                     "gain_pct": round(g / total * 100, 2), "split": int(s)}
+                    for f, g, s in pairs
+                ],
+            }
+        }
+        path.write_text(json.dumps(payload, ensure_ascii=False, indent=2))
+        logger.info(f"LTR feature importance saved: {path}")
+
+    # ── 保存 / 読み込み ──────────────────────────────────────────────
+
+    def save(self, path: Path) -> None:
+        """モデルを joblib で保存する。"""
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "model":           self.model,
+            "feature_columns": self.feature_columns,
+            "oof_ndcg3":       self.oof_ndcg3,
+            "temperature":     self.temperature,   # Temperature Scaling τ*
+        }
+        joblib.dump(payload, path)
+        logger.info(
+            f"LTR model saved: {path}  "
+            f"(NDCG@3={self.oof_ndcg3:.4f}  τ={self.temperature:.4f})"
+        )
+        # 特徴量重要度 JSON
+        imp_path = path.parent / "ltr_feature_importance.json"
+        self.save_feature_importance(imp_path)
+
+    @classmethod
+    def load(cls, path: Path) -> "LTRTrainer":
+        """保存済みモデルを読み込む。"""
+        raw = joblib.load(path)
+        instance = cls()
+        if isinstance(raw, dict):
+            instance.model           = raw["model"]
+            instance.feature_columns = raw.get("feature_columns",
+                                               FeatureEngineer.FEATURE_COLUMNS)
+            instance.oof_ndcg3       = raw.get("oof_ndcg3", 0.0)
+            instance.temperature     = raw.get("temperature", 1.0)  # 旧モデルは 1.0
+        else:
+            instance.model = raw
+        logger.info(
+            f"LTR model loaded: {path}  "
+            f"(NDCG@3={instance.oof_ndcg3:.4f}  "
+            f"τ={instance.temperature:.4f}  "
+            f"trees={instance.model.num_trees() if instance.model else 0})"
+        )
         return instance
 
 

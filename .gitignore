@@ -29,6 +29,12 @@ data/models/*.bin
 !data/models/nar_feature_stats.pkl
 !data/models/feature_importance.json
 !data/models/nar_feature_importance.json
+# Two-Brain System（LTR + Gatekeeper + PairCalibrator）
+!data/models/lgbm_ltr_model.pkl
+!data/models/gatekeeper_model.pkl
+!data/models/pair_calibrator.pkl
+!data/models/ltr_feature_importance.json
+!data/models/gatekeeper_feature_importance.json
 # 週次収集データもリポジトリに含める（collect_weekly.yml が更新）
 !data/raw/test_results.csv
 !data/raw/test_meta.csv

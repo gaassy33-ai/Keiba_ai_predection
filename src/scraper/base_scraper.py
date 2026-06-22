@@ -51,6 +51,7 @@ class RaceInfo:
     weather: str
     start_datetime: str
     entries: list[HorseRecord] = field(default_factory=list)
+    is_g1: bool = False    # G1（GI）グレードかどうか（デフォルトFalse = 後方互換）
 
 
 # ---------------------------------------------------------------------------

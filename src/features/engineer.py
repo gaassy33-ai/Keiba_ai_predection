@@ -47,6 +47,8 @@ class FeatureEngineer:
         self._horse_ground_stats: pd.DataFrame | None = None    # 馬場適性（馬別×馬場状態）
         # 新規追加特徴量
         self._horse_dist_stats: pd.DataFrame | None = None      # 馬の距離帯適性（≥5走フィルタ）
+        self._jockey_trainer_stats: pd.DataFrame | None = None  # 騎手×調教師コンビ勝率（≥10走）
+        self._horse_career_stats: pd.DataFrame | None = None    # 馬キャリア複勝率（≥10走）
 
     # ------------------------------------------------------------------
     # 前処理
@@ -126,6 +128,21 @@ class FeatureEngineer:
         # 上がり3F 異常値クレンジング: 60秒超は明らかなスクレイパーパースエラー → NaN化
         if "last_3f_num" in df.columns:
             df.loc[df["last_3f_num"] > 60, "last_3f_num"] = np.nan
+
+        # コーナー通過順位の最終コーナー値をパース（例: "3-3-3-2" → 2.0）
+        # 後段の _add_recent_form でレース内正規化して使用する
+        if "corner_positions" in df.columns:
+            def _extract_last_corner(s):
+                if not isinstance(s, str) or not s.strip():
+                    return np.nan
+                parts = [p.strip() for p in s.strip().split("-") if p.strip()]
+                try:
+                    return float(parts[-1]) if parts else np.nan
+                except (ValueError, IndexError):
+                    return np.nan
+            df["_last_corner_raw"] = df["corner_positions"].apply(_extract_last_corner)
+        else:
+            df["_last_corner_raw"] = np.nan
 
         return df
 
@@ -319,6 +336,39 @@ class FeatureEngineer:
                 ["horse_id", "_dist_bin", "horse_dist_win_rate"]
             ].rename(columns={"_dist_bin": "dist_bin"})
 
+        # 騎手×調教師コンビ勝率（≥10走フィルタで信頼性確保）
+        if "jockey_id" in h.columns and "trainer_name" in h.columns:
+            combo_grp = (
+                h[h["trainer_name"].replace("", pd.NA).notna()]
+                .groupby(["jockey_id", "trainer_name"])
+                .agg(_jt_wins=("is_win", "sum"), _jt_n=("is_win", "count"))
+                .reset_index()
+            )
+            combo_grp["jockey_trainer_win_rate"] = np.where(
+                combo_grp["_jt_n"] >= 10,
+                combo_grp["_jt_wins"] / combo_grp["_jt_n"],
+                np.nan,
+            )
+            self._jockey_trainer_stats = combo_grp[
+                ["jockey_id", "trainer_name", "jockey_trainer_win_rate"]
+            ]
+            logger.debug(f"  jockey_trainer_stats: {len(self._jockey_trainer_stats):,} コンビ")
+
+        # 馬キャリア複勝率（≥10走フィルタ）
+        if "horse_id" in h.columns:
+            horse_grp = (
+                h.groupby("horse_id")
+                .agg(_h_placed=("is_placed", "sum"), _h_n=("is_placed", "count"))
+                .reset_index()
+            )
+            horse_grp["horse_career_top3_rate"] = np.where(
+                horse_grp["_h_n"] >= 10,
+                horse_grp["_h_placed"] / horse_grp["_h_n"],
+                np.nan,
+            )
+            self._horse_career_stats = horse_grp[["horse_id", "horse_career_top3_rate"]]
+            logger.debug(f"  horse_career_stats: {len(self._horse_career_stats):,} 頭")
+
         logger.info("Aggregation precomputation done.")
 
     # ------------------------------------------------------------------
@@ -442,6 +492,17 @@ class FeatureEngineer:
             df["jockey_place_rate"] = np.nan
             df["jockey_runs"]       = np.nan
 
+        # ── 騎手×調教師コンビ勝率 ────────────────────────────────────────
+        if self._jockey_trainer_stats is not None and "trainer_name" in df.columns:
+            jt = self._jockey_trainer_stats.copy()
+            # jockey_id を正規化して既存の df["jockey_id"] と型を合わせる
+            jt["jockey_id"] = jt["jockey_id"].astype(str).str.strip().apply(
+                lambda x: str(int(x)) if x.isdigit() else x
+            )
+            df = df.merge(jt, on=["jockey_id", "trainer_name"], how="left")
+        else:
+            df["jockey_trainer_win_rate"] = np.nan
+
         # ── 直近成績（改善⑦含む）────────────────────────────────────
         df = self._add_recent_form(df)
 
@@ -494,6 +555,21 @@ class FeatureEngineer:
         else:
             df["horse_dist_win_rate"] = np.nan
 
+        # ── 馬キャリア複勝率 ──────────────────────────────────────────────
+        if self._horse_career_stats is not None:
+            df = df.merge(self._horse_career_stats, on="horse_id", how="left")
+        else:
+            df["horse_career_top3_rate"] = np.nan
+
+        # ── フィールド平均騎手勝率（レース難易度の代理変数）──────────────
+        # jockey_win_rate 列はすでにマージ済みのため、そこから平均を計算
+        if "jockey_win_rate" in df.columns:
+            df["field_avg_jockey_win_rate"] = (
+                pd.to_numeric(df["jockey_win_rate"], errors="coerce").mean()
+            )
+        else:
+            df["field_avg_jockey_win_rate"] = np.nan
+
         # ── ④ クラス変動フラグ（昇降級: 正=昇級 負=降級）────────────────
         if "prev_race_class_code" in df.columns and race_class_code >= 0:
             df["class_change"] = race_class_code - pd.to_numeric(
@@ -521,9 +597,11 @@ class FeatureEngineer:
             "prev_margin", "prev_last3f_rank_norm",
             "recent_pos_trend", "recent_last3f_trend",
             "prev_race_class_code",
-            "prev_horse_weight",    # ⑤ 前走馬体重 (kg)
-            "horse_weight_change",  # ⑤ 前走比体重変化 (kg差)
-            "last_race_date",       # 前走日付（days_since_last_race 計算用）
+            "prev_horse_weight",        # ⑤ 前走馬体重 (kg)
+            "horse_weight_change",      # ⑤ 前走比体重変化 (kg差)
+            "last_race_date",           # 前走日付（days_since_last_race 計算用）
+            "recent_avg_last3f_rank",   # 新規: 直近N走の上がり3Fランク平均（0=最速, 1=最遅）
+            "prev_corner_pos_norm",     # 新規: 前走最終コーナー通過順位正規化（0=先頭, 1=最後尾）
         ]
 
         # ── 推論パス: from_stats() でロード済みの統計を使用 ───────────
@@ -557,6 +635,18 @@ class FeatureEngineer:
         else:
             h["last3f_rank_norm"] = np.nan
 
+        # 最終コーナー通過順位のレース内正規化（0=先頭, 1=最後尾）
+        if "_last_corner_raw" in h.columns and "race_id" in h.columns:
+            h["_corner_max"] = h.groupby("race_id")["_last_corner_raw"].transform("max")
+            h["_corner_min"] = h.groupby("race_id")["_last_corner_raw"].transform("min")
+            h["last_corner_pos_norm"] = np.where(
+                h["_corner_max"] > h["_corner_min"],
+                (h["_last_corner_raw"] - h["_corner_min"]) / (h["_corner_max"] - h["_corner_min"]),
+                np.where(h["_last_corner_raw"].notna(), 0.5, np.nan),
+            )
+        else:
+            h["last_corner_pos_norm"] = np.nan
+
         # ソートキー: race_date がある場合は使用、なければ pseudo_date（YYYY+KK+DD）で代替
         # race_id[4:6] は会場コード（01-10）で時系列でないため raw race_id でのソートは不正確
         # pseudo_date = race_id[0:4] + race_id[6:10]（年 + 回数 + 日）で会場コードを除外する
@@ -582,6 +672,7 @@ class FeatureEngineer:
                 recent_avg_pos=("finish_pos_num", "mean"),
                 recent_avg_last3f=("last_3f_num", "mean"),
                 recent_top3_rate=("is_placed", "mean"),
+                recent_avg_last3f_rank=("last3f_rank_norm", "mean"),  # 新規: 速度ランク平均
             )
             .reset_index()
         )
@@ -612,6 +703,9 @@ class FeatureEngineer:
         # 前走日付（days_since_last_race 計算用）
         if "race_date" in prev_race.columns:
             prev_cols.append("race_date")
+        # 新規: 前走最終コーナー通過順位（正規化済み）
+        if "last_corner_pos_norm" in prev_race.columns:
+            prev_cols.append("last_corner_pos_norm")
 
         prev_df = prev_race[prev_cols].rename(columns={
             "margin_num": "prev_margin",
@@ -621,6 +715,7 @@ class FeatureEngineer:
             "race_class_code_hist": "prev_race_class_code",
             "horse_weight_num": "prev_horse_weight",
             "race_date": "last_race_date",
+            "last_corner_pos_norm": "prev_corner_pos_norm",  # 新規
         })
 
         # ⑤ 前々走（rank=2）の馬体重を取得して体重変化を計算
@@ -934,6 +1029,8 @@ class FeatureEngineer:
             "jockey_venue_stats":   self._jockey_venue_stats,
             "horse_ground_stats":   self._horse_ground_stats,
             "horse_dist_stats":     self._horse_dist_stats,
+            "jockey_trainer_stats": self._jockey_trainer_stats,  # 新規
+            "horse_career_stats":   self._horse_career_stats,    # 新規
         }
         with open(path, "wb") as f:
             pickle.dump(stats, f)
@@ -959,6 +1056,18 @@ class FeatureEngineer:
         else:
             h["last3f_rank_norm"] = np.nan
 
+        # 最終コーナー通過順位のレース内正規化（0=先頭, 1=最後尾）
+        if "_last_corner_raw" in h.columns and "race_id" in h.columns:
+            h["_corner_max"] = h.groupby("race_id")["_last_corner_raw"].transform("max")
+            h["_corner_min"] = h.groupby("race_id")["_last_corner_raw"].transform("min")
+            h["last_corner_pos_norm"] = np.where(
+                h["_corner_max"] > h["_corner_min"],
+                (h["_last_corner_raw"] - h["_corner_min"]) / (h["_corner_max"] - h["_corner_min"]),
+                np.where(h["_last_corner_raw"].notna(), 0.5, np.nan),
+            )
+        else:
+            h["last_corner_pos_norm"] = np.nan
+
         # ソートキー: race_date がある場合は使用、なければ pseudo_date（YYYY+KK+DD）で代替
         # race_id[4:6] は会場コード（01-10）で時系列でないため raw race_id でのソートは不正確
         if "race_date" not in h.columns or not h["race_date"].notna().any():
@@ -980,6 +1089,7 @@ class FeatureEngineer:
                 recent_avg_pos=("finish_pos_num", "mean"),
                 recent_avg_last3f=("last_3f_num", "mean"),
                 recent_top3_rate=("is_placed", "mean"),
+                recent_avg_last3f_rank=("last3f_rank_norm", "mean"),  # 新規
             )
             .reset_index()
         )
@@ -1007,6 +1117,9 @@ class FeatureEngineer:
         # 前走日付（days_since_last_race 計算用）
         if "race_date" in prev_race.columns:
             prev_cols.append("race_date")
+        # 新規: 前走最終コーナー通過順位
+        if "last_corner_pos_norm" in prev_race.columns:
+            prev_cols.append("last_corner_pos_norm")
 
         prev_df = prev_race[prev_cols].rename(columns={
             "margin_num": "prev_margin",
@@ -1016,6 +1129,7 @@ class FeatureEngineer:
             "race_class_code_hist": "prev_race_class_code",
             "horse_weight_num": "prev_horse_weight",
             "race_date": "last_race_date",
+            "last_corner_pos_norm": "prev_corner_pos_norm",  # 新規
         })
 
         # ⑤ 前々走（rank=2）の馬体重から体重変化を計算
@@ -1066,7 +1180,8 @@ class FeatureEngineer:
 
         for c in ("prev_margin", "prev_last3f_rank_norm", "prev_race_class_code",
                   "recent_pos_trend", "recent_last3f_trend",
-                  "prev_horse_weight", "horse_weight_change", "last_race_date"):
+                  "prev_horse_weight", "horse_weight_change", "last_race_date",
+                  "recent_avg_last3f_rank", "prev_corner_pos_norm"):  # 新規
             if c not in result.columns:
                 result[c] = np.nan
         logger.info(f"Horse recent form computed: {len(result):,} horses")
@@ -1085,14 +1200,16 @@ class FeatureEngineer:
             return instance
         with open(path, "rb") as f:
             stats = pickle.load(f)
-        instance._sire_win_rate        = stats.get("sire_win_rate")
-        instance._bms_win_rate         = stats.get("bms_win_rate")
-        instance._jockey_course_stats  = stats.get("jockey_course_stats")
-        instance._trainer_stats        = stats.get("trainer_stats")
-        instance._horse_recent_form    = stats.get("horse_recent_form")
-        instance._jockey_venue_stats   = stats.get("jockey_venue_stats")
-        instance._horse_ground_stats   = stats.get("horse_ground_stats")
-        instance._horse_dist_stats     = stats.get("horse_dist_stats")
+        instance._sire_win_rate         = stats.get("sire_win_rate")
+        instance._bms_win_rate          = stats.get("bms_win_rate")
+        instance._jockey_course_stats   = stats.get("jockey_course_stats")
+        instance._trainer_stats         = stats.get("trainer_stats")
+        instance._horse_recent_form     = stats.get("horse_recent_form")
+        instance._jockey_venue_stats    = stats.get("jockey_venue_stats")
+        instance._horse_ground_stats    = stats.get("horse_ground_stats")
+        instance._horse_dist_stats      = stats.get("horse_dist_stats")
+        instance._jockey_trainer_stats  = stats.get("jockey_trainer_stats")  # 新規
+        instance._horse_career_stats    = stats.get("horse_career_stats")    # 新規
         if instance._horse_recent_form is not None:
             logger.info(
                 f"Feature stats loaded from {path} "
@@ -1167,52 +1284,51 @@ class FeatureEngineer:
     # ------------------------------------------------------------------
 
     FEATURE_COLUMNS = [
-        # 既存特徴量
+        # ── 基本情報 ───────────────────────────────────────────────────
         "frame_number",
         "horse_number",
         "age",
         "weight_carried",
+        # ── レース環境 ─────────────────────────────────────────────────
         "course_type_code",
         "distance",
         "ground_condition_code",
         "weather_code",
+        # ── 厩舎・騎手 ─────────────────────────────────────────────────
         "trainer_win_rate",
         "trainer_place_rate",
         "jockey_win_rate",
         "jockey_place_rate",
         "jockey_runs",
+        "jockey_trainer_win_rate",   # 新規(2026-04): 騎手×調教師コンビ勝率（≥10走）
+        # ── 直近成績 ───────────────────────────────────────────────────
         "recent_avg_pos",
         "recent_avg_last3f",
         "recent_top3_rate",
-        # 改善④: レースクラス
-        "race_class_code",
-        # 改善⑤: 会場・馬場交互作用
-        "venue_code",
-        "venue_ground_code",
-        # 改善②: 出走頭数
-        "n_entries",
-        # 改善⑥: 市場集中度・オッズ特徴量
-        # （改善⑨を撤回: 2026-04実績で model が1.6x過信していることが判明。
-        #   市場情報をモデルに組み込み、Platt scaling と併せて確率を較正する）
-        "market_hhi",
-        "odds_log",                  # ⑧ オッズ対数変換（人気度を滑らかに表現）
-        "popularity_rank_norm",      # ⑧ レース内人気順位正規化 0-1（1番人気=0）
-        # 改善⑦: 前走パフォーマンス
+        "recent_avg_last3f_rank",    # 新規(2026-04): 直近上がり3Fランク平均（0=最速, 1=最遅）
+        "recent_pos_trend",
+        "recent_last3f_trend",
+        # ── 前走パフォーマンス ─────────────────────────────────────────
         "prev_margin",
         "prev_last3f_rank_norm",
-        # 新規追加特徴量 (2026-04)
-        "horse_dist_win_rate",       # ② 距離帯適性（馬別・≥5走フィルタ）
-        "recent_pos_trend",          # ③ 着順トレンド（負=改善, 正=悪化）
-        "recent_last3f_trend",       # ③ 上がり3Fトレンド（負=改善）
-        "class_change",              # ④ クラス変動（負=降級, 0=同級, 正=昇級）
-        # スクレイパー修正後に追加 (2026-04): 馬体重変化特徴量
-        "prev_horse_weight",         # ⑤ 前走馬体重 (kg)
-        "horse_weight_change",       # ⑤ 前走比体重変化 (kg差、増=正、減=負)
-        # バグ修正後に追加 (2026-05): 未使用だった特徴量を有効化
-        "sire_win_rate",             # 父別勝率（産駒統計、build_entry_featuresで結合修正済み）
-        "bms_win_rate",              # 母父別勝率（BMS統計、同上）
-        "jockey_venue_win_rate",     # 騎手×会場 勝率（交互作用特徴量）
-        "horse_ground_win_rate",     # 馬別×馬場状態 勝率（適性特徴量）
-        "is_3yo",                    # 3歳馬フラグ（春の急成長期対応）
-        "days_since_last_race",      # 前走からの経過日数（中2週以内 vs 中3週以上の違い）
+        "prev_corner_pos_norm",      # 新規(2026-04): 前走最終コーナー通過順位（0=先頭, 1=最後尾）
+        # ── クラス・会場 ───────────────────────────────────────────────
+        "race_class_code",
+        "class_change",
+        "venue_code",
+        "venue_ground_code",
+        "n_entries",
+        # ── 市場情報（market_hhi は odds_log と高相関のため削除 2026-04-26） ──
+        "odds_log",
+        "popularity_rank_norm",
+        # ── フィールド・馬個体 ─────────────────────────────────────────
+        "field_avg_jockey_win_rate", # 新規(2026-04): フィールド平均騎手勝率（レース強度指標）
+        "horse_career_top3_rate",    # 新規(2026-04): 馬キャリア複勝率（≥10走、安定性指標）
+        "horse_dist_win_rate",
+        "horse_ground_win_rate",
+        # ── 馬体重・状態 ───────────────────────────────────────────────
+        "prev_horse_weight",
+        "horse_weight_change",
+        "is_3yo",
+        "days_since_last_race",
     ]

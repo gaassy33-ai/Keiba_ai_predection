@@ -79,12 +79,14 @@ class NetkeibaScraper(BaseScraper):
             # DOMContentLoaded で制御を返す（全リソース待ちによるタイムアウトを防ぐ）
             opts.page_load_strategy = "eager"
 
-            service = (
-                Service(settings.chromedriver_path)
-                if settings.chromedriver_path
-                else Service(ChromeDriverManager().install())
-            )
-            self._driver = webdriver.Chrome(service=service, options=opts)
+            if settings.chromedriver_path:
+                # .env に chromedriver_path が明示指定されている場合はそれを使用
+                service = Service(settings.chromedriver_path)
+                self._driver = webdriver.Chrome(service=service, options=opts)
+            else:
+                # Selenium 4.6+ 組み込みの Selenium Manager に自動解決させる
+                # （webdriver_manager の install() パスバグを回避）
+                self._driver = webdriver.Chrome(options=opts)
             self._driver.set_page_load_timeout(60)
         return self._driver
 
@@ -805,6 +807,23 @@ class NetkeibaScraper(BaseScraper):
                 popularity=popularity_val,
             ))
 
+        # ── G1判定（二重チェックで堅牢に）────────────────────────────
+        # 主判定: 当該レース見出し (.RaceList_Item02) 内のグレードアイコン
+        #   class="Icon_GradeType1" (netkeiba 標準)
+        #   ※ ページ全体 (soup) で検索すると、サイドバーの
+        #     「AI展開予想成績」ウィジェット等に表示される過去G1レース
+        #     （例: 6/7 安田記念）のアイコンを誤検出するため、
+        #     当該レースの見出し領域に限定する。
+        # 副判定: race_name テキストに "GI" を含む（"GII"/"GIII" との混同を回避）
+        race_header = soup.select_one(".RaceList_Item02")
+        is_g1 = bool(race_header.select_one(".Icon_GradeType1")) if race_header else False
+        if not is_g1:
+            race_name_text = race_name.get_text(strip=True) if race_name else ""
+            # "GI" を含むが "GII" は含まない（GIIはGIの部分文字列になるため）
+            is_g1 = "GI" in race_name_text and "GII" not in race_name_text
+        if is_g1:
+            logger.info(f"  🏆 G1レース検出: {race_name.get_text(strip=True) if race_name else race_id}")
+
         logger.info(f"出走馬 {len(entries)} 頭: {[e.horse_name for e in entries[:5]]}")
         logger.info(f"horse_ids: {[e.horse_id for e in entries[:5]]}")
         logger.info(f"jockey_ids: {[e.jockey_id for e in entries[:5]]}")
@@ -818,6 +837,7 @@ class NetkeibaScraper(BaseScraper):
             weather=weather,
             start_datetime="",  # race_schedule から補完
             entries=entries,
+            is_g1=is_g1,
         )
 
     # ------------------------------------------------------------------
