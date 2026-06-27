@@ -161,7 +161,12 @@ jobs:
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add docs/
+          # data/logs/（予想CSV・shadow_candidates）も commit する。
+          # 朝バッチ/夕方バッチは別runnerで動くため、artifactアーカイブのみでは
+          # 夕方バッチが当日の予想ファイルを見つけられない（2026-06-27 に発覚）。
+          git add data/logs/
           git diff --cached --quiet || git commit -m "chore: 朝バッチ 全レース予想ページ更新 [skip ci]"
+          git pull --rebase --autostash || true
           git push || true
 
       - name: data/logs アーカイブ（推論結果・Gatekeeper棄却ログ等）
@@ -193,6 +198,8 @@ jobs:
       || (github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'evening')
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: write
     concurrency:
       group: keiba-evening
       cancel-in-progress: false
@@ -230,6 +237,16 @@ jobs:
           python -m agents.coordinator \
             --phase evening \
             --date "${{ steps.resolve_date.outputs.date }}"
+
+      - name: Commit & push 振り返り結果（results_cache・review/feedback）
+        if: always()
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/logs/ data/agents/
+          git diff --cached --quiet || git commit -m "chore: 夕方バッチ 振り返り結果更新 [skip ci]"
+          git pull --rebase --autostash || true
+          git push || true
 
       - name: data/logs・data/agents アーカイブ（振り返り君・評論家の出力）
         if: always()
@@ -295,7 +312,9 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           # ファイルが存在する場合のみ add（存在しない場合はスキップ）
           [ -f docs/stats.html ] && git add docs/stats.html || true
+          git add data/logs/
           git diff --cached --quiet || git commit -m "chore: 週末成績集計 [skip ci]"
+          git pull --rebase --autostash || true
           git push || true
 
       - name: data/logs アーカイブ（結果キャッシュ）

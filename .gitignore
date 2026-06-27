@@ -41,8 +41,14 @@ data/models/*.bin
 !data/raw/nar_results.csv
 !data/raw/nar_meta.csv
 
-# ログ
+# ログ（テキストログのみ除外。data/logs/ はリポジトリに含める）
 logs/
+# 2026-06-27: 朝バッチ/夕方バッチ/週末まとめが別々のGitHub Actions runner
+# （≠同一checkout）で実行されるため、artifactアーカイブのみでは
+# ジョブ間でデータを引き渡せない（夕方バッチが当日の予想を見つけられない
+# 問題が発生）。data/logs/ をgit管理化し、各ジョブが commit & push する
+# ことでジョブ間・週次でのデータ継続性を確保する。
+!data/logs/
 
 # Jupyter
 .ipynb_checkpoints/

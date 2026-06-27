@@ -1,0 +1,91 @@
+{
+  "generated_at": "2026-03-29T19:49:58.033407",
+  "target_date": "2026-03-29",
+  "accuracy_summary": {
+    "total_races": 168,
+    "buy_races": 35,
+    "tansho_hit_rate": 0.229,
+    "tansho_roi_avg": 60.5,
+    "umatan_hit_rate": 0.057,
+    "umatan_roi_avg": 53.6,
+    "weekly_trend": {
+      "12": {
+        "buy": 22,
+        "hit_tan": 8,
+        "avg_ret": 60.45454545454545
+      },
+      "13": {
+        "buy": 13,
+        "hit_tan": 0,
+        "avg_ret": NaN
+      }
+    }
+  },
+  "venue_accuracy": {
+    "?": {
+      "races": 5,
+      "hit_rate": 0.6,
+      "roi_avg": 76.0
+    },
+    "中京": {
+      "races": 7,
+      "hit_rate": 0.0,
+      "roi_avg": 0.0
+    },
+    "中山": {
+      "races": 13,
+      "hit_rate": 0.308,
+      "roi_avg": 91.1
+    },
+    "阪神": {
+      "races": 10,
+      "hit_rate": 0.1,
+      "roi_avg": 26.0
+    }
+  },
+  "mark_accuracy": {
+    "○": {
+      "races": 19,
+      "hit_rate": 0.053,
+      "avg_prob": 0.222
+    },
+    "◎": {
+      "races": 4,
+      "hit_rate": 0.5,
+      "avg_prob": 0.325
+    }
+  },
+  "feature_importance": {
+    "top5_win": [
+      {
+        "feature": "odds_log",
+        "gain_pct": 53.4
+      },
+      {
+        "feature": "popularity_rank_norm",
+        "gain_pct": 15.87
+      },
+      {
+        "feature": "market_hhi",
+        "gain_pct": 5.16
+      },
+      {
+        "feature": "jockey_place_rate",
+        "gain_pct": 2.52
+      },
+      {
+        "feature": "jockey_runs",
+        "gain_pct": 2.44
+      }
+    ],
+    "num_trees": 220
+  },
+  "data_health": {
+    "total_records": 168,
+    "result_filled": 22,
+    "missing_result": 146,
+    "latest_date": "2026-03-29",
+    "days_since_latest": 0,
+    "status": "OK"
+  }
+}

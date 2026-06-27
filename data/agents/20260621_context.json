@@ -1,0 +1,103 @@
+{
+  "generated_at": "2026-06-22T21:21:54.679446",
+  "target_date": "2026-06-21",
+  "accuracy_summary": {
+    "total_bets": 230,
+    "buy_bets": 230,
+    "hit_rate": 0.026,
+    "roi": 0.613,
+    "weekly_trend": {
+      "18": {
+        "bets": 54,
+        "hits": 1,
+        "payout": 3970
+      },
+      "19": {
+        "bets": 37,
+        "hits": 1,
+        "payout": 5100
+      },
+      "20": {
+        "bets": 41,
+        "hits": 0,
+        "payout": 0
+      },
+      "21": {
+        "bets": 20,
+        "hits": 1,
+        "payout": 2590
+      },
+      "22": {
+        "bets": 25,
+        "hits": 2,
+        "payout": 1810
+      },
+      "23": {
+        "bets": 20,
+        "hits": 0,
+        "payout": 0
+      },
+      "24": {
+        "bets": 10,
+        "hits": 1,
+        "payout": 620
+      },
+      "25": {
+        "bets": 10,
+        "hits": 0,
+        "payout": 0
+      }
+    }
+  },
+  "venue_accuracy": {
+    "京都": {
+      "bets": 86,
+      "hit_rate": 0.023,
+      "roi": 0.649
+    },
+    "東京": {
+      "bets": 119,
+      "hit_rate": 0.025,
+      "roi": 0.663
+    },
+    "阪神": {
+      "bets": 25,
+      "hit_rate": 0.04,
+      "roi": 0.248
+    }
+  },
+  "feature_importance": {
+    "top5": [
+      {
+        "feature": "recent_avg_pos",
+        "gain_pct": 18.95
+      },
+      {
+        "feature": "jockey_place_rate",
+        "gain_pct": 7.93
+      },
+      {
+        "feature": "recent_top3_rate",
+        "gain_pct": 7.93
+      },
+      {
+        "feature": "recent_pos_trend",
+        "gain_pct": 4.66
+      },
+      {
+        "feature": "prev_last3f_rank_norm",
+        "gain_pct": 4.46
+      }
+    ],
+    "num_trees": 234,
+    "oof_ndcg3": 0.4677
+  },
+  "data_health": {
+    "total_records": 230,
+    "result_filled": 230,
+    "missing_result": 0,
+    "latest_date": "2026-06-21",
+    "days_since_latest": 0,
+    "status": "OK"
+  }
+}

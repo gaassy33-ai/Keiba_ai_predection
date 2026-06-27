@@ -1,0 +1,2 @@
+date,race_id,race_name,course_type,distance,horse_num_i,horse_id_i,horse_name_i,horse_num_j,horse_id_j,horse_name_j,odds_i,odds_j,est_quinella_odds,p_model,p_market,ev,ev_rank
+2026-06-13,202609030301,阪神1R,ダート,1200,5,2023100376,プレデンシア,10,2023104397,エバイダンス,9.2,7.5,41.6,0.1169,0.0198,4.867,1

@@ -1,0 +1,76 @@
+{
+  "generated_at": "2026-03-29T19:51:55.229491",
+  "date": "2026-03-29",
+  "predictions": [
+    {
+      "race_id": "202609020201",
+      "race_name": "3歳未勝利",
+      "honmei_num": "3",
+      "honmei_name": "マルベック",
+      "honmei_prob": 0.253,
+      "mark": "○",
+      "actual_pos": 9,
+      "tansho_hit": false,
+      "tansho_ret": 0,
+      "umatan_hit": false,
+      "status": "ok"
+    },
+    {
+      "race_id": "202607010602",
+      "race_name": "3歳未勝利",
+      "honmei_num": "8",
+      "honmei_name": "マテンロウアワー",
+      "honmei_prob": 0.244,
+      "mark": "○",
+      "actual_pos": 4,
+      "tansho_hit": false,
+      "tansho_ret": 0,
+      "umatan_hit": false,
+      "status": "ok"
+    },
+    {
+      "race_id": "202607010603",
+      "race_name": "3歳未勝利",
+      "honmei_num": "7",
+      "honmei_name": "ロイヤルスパイア",
+      "honmei_prob": 0.254,
+      "mark": "○",
+      "actual_pos": 1,
+      "tansho_hit": true,
+      "tansho_ret": null,
+      "umatan_hit": true,
+      "status": "ok"
+    },
+    {
+      "race_id": "202607010608",
+      "race_name": "大寒桜賞",
+      "honmei_num": "2",
+      "honmei_name": "メイショウナルカミ",
+      "honmei_prob": 0.284,
+      "mark": "○",
+      "actual_pos": 7,
+      "tansho_hit": false,
+      "tansho_ret": 0,
+      "umatan_hit": false,
+      "status": "ok"
+    }
+  ],
+  "analysis": {
+    "buy_races": 4,
+    "tansho_hit": 1,
+    "tansho_hit_rate": 0.25,
+    "tansho_roi": 0.0,
+    "near_miss_races": 0,
+    "upset_races": 2,
+    "mark_stats": {
+      "○": {
+        "n": 4,
+        "hit": 1
+      }
+    },
+    "hints": [
+      "単勝的中率が30%を下回っています。確率閾値（MIN_HONMEI_PROB）の引き上げを検討。",
+      "大敗（高確率→6着以下）: マルベック, メイショウナルカミ → EV フィルタ・gap フィルタの見直しを検討。"
+    ]
+  }
+}
