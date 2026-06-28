@@ -1,11 +1,12 @@
 """
-不調期専用モデル 再学習スクリプト（37特徴量対応版）
+不調期専用モデル 再学習スクリプト（34特徴量対応版）
 
-train_all.csv（expand_and_train.py が生成した37特徴量キャッシュ）をベースに
+train_all.csv（expand_and_train.py が生成した34特徴量キャッシュ）をベースに
 不調期月（1・7・8・9・11・12月）のレースだけで ModelTrainer を再学習し、
 lgbm_model_bad_season.pkl を上書き保存する。
 
 特徴量生成を省略できるため高速（数分）で完了する。
+※ 2026-04-26: 37 → 34 特徴量に削減（sire_win_rate/bms_win_rate/jockey_venue_win_rate 削除）
 
 実行:
     .venv/bin/python train_bad_season_37feat.py

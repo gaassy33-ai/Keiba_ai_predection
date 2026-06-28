@@ -126,9 +126,20 @@ def main() -> None:
     logger.info(f"  レース数: {training_df['race_id'].nunique():,}")
 
     # ── LightGBM 学習 ───────────────────────────────────────────
-    logger.info("[STEP 2] LightGBM 学習（GroupKFold 5-fold）")
+    logger.info("[STEP 2] LightGBM 学習（GroupKFold 5-fold + 時系列重み付け）")
+
+    # 時系列重み付け: 最近のデータほど高い重みを付与して汎化性能を改善
+    # 2022=1.0, 2023=1.5, 2024=2.0, 2025=3.0, 2026=4.0
+    import numpy as np
+    year_weight_map = {2022: 1.0, 2023: 1.5, 2024: 2.0, 2025: 3.0, 2026: 4.0}
+    training_df["_year"] = training_df["race_id"].astype(str).str[:4].astype(int, errors="ignore")
+    sample_weights = training_df["_year"].map(year_weight_map).fillna(1.0).to_numpy(dtype=float)
+    avg_w = sample_weights.mean()
+    logger.info(f"  サンプル重み: {year_weight_map}")
+    logger.info(f"  平均重み: {avg_w:.2f}  (min={sample_weights.min():.1f} max={sample_weights.max():.1f})")
+
     trainer = ModelTrainer()
-    trainer.fit(training_df)
+    trainer.fit(training_df, sample_weight=sample_weights)
 
     elapsed2 = (time.time() - t0) / 60
     logger.info(f"[STEP 2] 完了: {elapsed2:.1f}分")

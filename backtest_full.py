@@ -64,9 +64,10 @@ _BAD_MODEL_PROB_THRESHOLD = 0.25
 _BAD_MODEL_MARK_STRONG    = 0.28
 
 EV_PARTNER_TOP_N       = 7
-MAX_BAREN_TICKETS      = 3
-MAX_SANRENFUKU_TICKETS = 7
-MAX_SANRENTAN_TICKETS  = 7
+MAX_BAREN_TICKETS      = 2    # quinella EV 上位2点（EV > EV_BAREN_THRESHOLD のみ）
+MAX_SANRENFUKU_TICKETS = 5    # EV選択・5点
+EV_BAREN_THRESHOLD     = 0.0   # 馬連: quinella EV 閾値（0.0=フィルタなし、確率順で選択）
+MAX_SANRENTAN_TICKETS  = 3    # 確率上位3点（5→3、コスト削減でROI改善 2026-04-27）
 JRA_TAKE = {"馬連": 0.225, "馬単": 0.25, "3連複": 0.225, "3連単": 0.275}
 
 # ── ロガー ────────────────────────────────────────────────────────────
@@ -144,8 +145,8 @@ def _apply_model(act: ModelTrainer, X: pd.DataFrame) -> tuple[np.ndarray, np.nda
         else:
             place_probs = place_raw
         blended = 0.7 * win_probs + 0.3 * place_probs
-        return win_probs, blended
-    return win_probs, win_probs
+        return win_probs, blended, place_probs
+    return win_probs, win_probs, win_probs  # place_probs なし時は win_probs で代替
 
 
 def is_buy_race(h1_prob, gap, month, is_maiden, n_entries,
@@ -250,11 +251,12 @@ def _process_race(race_id, entries, meta_row, fe, act, bad_trainer) -> dict | No
     model = bad_trainer if using_bad else act
 
     X = feat_df[FeatureEngineer.FEATURE_COLUMNS].apply(pd.to_numeric, errors="coerce").fillna(0)
-    win_probs_arr, blended_probs_arr = _apply_model(model, X)
+    win_probs_arr, blended_probs_arr, place_probs_arr = _apply_model(model, X)
 
     pred_df = feat_df[["horse_id", "horse_name", "horse_number"]].copy()
     pred_df["win_prob"]      = blended_probs_arr  # 順位付け・表示にはアンサンブル確率を使用
     pred_df["win_prob_pure"] = win_probs_arr       # Harville 確率計算には純粋勝利確率を使用
+    pred_df["place_prob"]    = place_probs_arr     # 複勝確率（3連複パートナー選択用）
     pred_df = pred_df.sort_values("win_prob", ascending=False).reset_index(drop=True)
 
     if len(pred_df) < 3:
@@ -314,22 +316,51 @@ def _process_race(race_id, entries, meta_row, fe, act, bad_trainer) -> dict | No
     model_probs = [p / ps for p in probs_raw] if ps > 0 else probs_raw
     hi = valid_ids.index(honmei_id) if honmei_id in valid_ids else 0
 
-    partner_rows = pred_df[pred_df["horse_id"] != honmei_id].head(EV_PARTNER_TOP_N)
+    # ── pred_df ランク（win_prob 降順）→ Harville index マップ ────────────
+    _num_to_pred_rank: dict[str, int] = {
+        str(int(float(row["horse_number"]))): idx
+        for idx, (_, row) in enumerate(pred_df.iterrows())
+    }
+
+    # 馬連プール: Harville quinella確率（◎とpartnerが上位2着に入る理論確率）で選択
+    # 理論的に最適な選択法: P(◎1着,partner2着) + P(partner1着,◎2着) を最大化
+    # 市場フィルタ: partner odds > 30 倍はほぼ的中期待なしのため除外
+    baren_candidates: list[tuple[str, float]] = []
+    for _, row in pred_df[pred_df["horse_id"].astype(str) != honmei_id].iterrows():
+        pnum = str(int(float(row["horse_number"])))
+        phid = str(row["horse_id"])
+        vi_p = valid_ids.index(phid) if phid in valid_ids else None
+        p_odds_val = float(odds_map.get(phid, float("nan")))
+        if not np.isnan(p_odds_val) and p_odds_val > 30.0:
+            continue  # ロングショット除外
+        if vi_p is not None and hi is not None:
+            q_prob = _prob_quinella(model_probs, hi, vi_p)  # Harville quinella確率
+        else:
+            q_prob = float(row["win_prob"])  # fallback
+        baren_candidates.append((pnum, q_prob))
+    baren_candidates.sort(key=lambda x: -x[1])
+    baren_pool = [
+        pnum for pnum, q in baren_candidates[:MAX_BAREN_TICKETS]
+        if q >= EV_BAREN_THRESHOLD  # 0.0=フィルタなし
+    ]
+
+    # 3連複/3連単プール: place_prob 上位 EV_PARTNER_TOP_N（◎除く、daily_batch.py準拠）
+    partner_rows_3f = pred_df[
+        pred_df["horse_id"].astype(str) != honmei_id
+    ].sort_values("place_prob", ascending=False).head(EV_PARTNER_TOP_N)
     pool = []
-    for _, row in partner_rows.iterrows():
+    for _, row in partner_rows_3f.iterrows():
         hid = str(row["horse_id"])
         num = str(int(float(row["horse_number"])))
         vi  = valid_ids.index(hid) if hid in valid_ids else None
         pool.append((num, vi))
-    partner_idx = {num: i + 1 for i, (num, _) in enumerate(pool)}
 
     # 単勝
     tansho_hit = int(honmei_id == p1id)
     tansho_ret = win_odds * 100 if tansho_hit else 0.0
 
-    # 馬連
-    baren_pool   = [num for num, _ in pool[:MAX_BAREN_TICKETS]]
-    baren_combos = [(honmei_num, p) for p in baren_pool]
+    # 馬連（win_prob 上位 MAX_BAREN_TICKETS 点）
+    baren_combos = [(honmei_num, num) for num in baren_pool]
     actual_baren = {p1n, p2n}
     baren_hit    = int(any(set([h, p]) == actual_baren for h, p in baren_combos))
     baren_ret    = 0.0
@@ -340,16 +371,22 @@ def _process_race(race_id, entries, meta_row, fe, act, bad_trainer) -> dict | No
             baren_ret = _est_odds(_prob_quinella(mkt_probs, vi1, vi2), "馬連") * 100
     baren_cost = len(baren_combos) * 100
 
-    # 3連複
+    # ── 3連複: place_prob上位プール × EV（model_p×e_od）降順ソート・5点──────────
+    # Harville index: pred_df の win_prob 降順ランクを使用（daily_batch.py と同一ロジック）
+    _partner_pred_idxs_3f = {
+        num: _num_to_pred_rank.get(num, len(model_probs) - 1)
+        for num, _vi in pool
+    }
     sf_all = []
     for (na, vi_a), (nb, vi_b) in _comb(pool, 2):
-        pa = partner_idx.get(na, 1); pb = partner_idx.get(nb, 2)
+        pa = _partner_pred_idxs_3f.get(na, 1)
+        pb = _partner_pred_idxs_3f.get(nb, 2)
         mp = _prob_trio(model_probs, 0, pa, pb)
         eo = (_est_odds(_prob_trio(mkt_probs, hi, vi_a, vi_b), "3連複")
               if hi is not None and vi_a is not None and vi_b is not None
               else _est_odds(mp, "3連複"))
         sf_all.append((na, nb, mp, eo))
-    sf_all.sort(key=lambda x: -x[2])
+    sf_all.sort(key=lambda x: -(x[2] * x[3]))  # EV = model_p × e_od 降順
     sf_sel    = sf_all[:MAX_SANRENFUKU_TICKETS]
     sf_combos = ([(a, b) for a, b, _, _ in sf_sel]
                  if (not sf_sel or _synth_odds([od for _, _, _, od in sf_sel]) >= 1.0)
@@ -365,16 +402,17 @@ def _process_race(race_id, entries, meta_row, fe, act, bad_trainer) -> dict | No
             sf_ret = _est_odds(_prob_trio(mkt_probs, vi1, vi2, vi3), "3連複") * 100
     sf_cost = len(sf_combos) * 100
 
-    # 3連単
+    # ── 3連単: place_prob上位プール × EV降順ソート・5点──────────────────────────
     st_all = []
     for (n2, vi_2), (n3, vi_3) in _perm(pool, 2):
-        p2 = partner_idx.get(n2, 1); p3 = partner_idx.get(n3, 2)
+        p2 = _partner_pred_idxs_3f.get(n2, 1)
+        p3 = _partner_pred_idxs_3f.get(n3, 2)
         mp = _prob_sanrentan(model_probs, 0, p2, p3)
         eo = (_est_odds(_prob_sanrentan(mkt_probs, hi, vi_2, vi_3), "3連単")
               if hi is not None and vi_2 is not None and vi_3 is not None
               else _est_odds(mp, "3連単"))
         st_all.append((n2, n3, mp, eo))
-    st_all.sort(key=lambda x: -x[2])
+    st_all.sort(key=lambda x: -x[2])  # model_p 降順（EV → 確率重視に変更、hit率改善）
     st_sel    = st_all[:MAX_SANRENTAN_TICKETS]
     st_combos = ([(n2, n3) for n2, n3, _, _ in st_sel]
                  if (not st_sel or _synth_odds([od for _, _, _, od in st_sel]) >= 1.0)
