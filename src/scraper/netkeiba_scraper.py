@@ -690,6 +690,33 @@ class NetkeibaScraper(BaseScraper):
         except Exception:
             logger.warning("Shutuba_Table が見つかりません — ページソースをそのまま解析します")
 
+        # 単勝オッズはテーブル本体とは別に非同期（AJAX）で後から描画されるため、
+        # テーブルの存在だけでは不十分。オッズセルに数値が実際に入るまで
+        # 明示的に待機する（2026-06-28: この待機が無く9/10レースでオッズ
+        # 欠損→EV/Gatekeeperが機能不全になる障害が発生）。
+        def _odds_rendered(drv) -> bool:
+            cells = drv.find_elements(
+                By.CSS_SELECTOR, "table.Shutuba_Table td.Txt_R.Popular, table.Shutuba_Table td.Popular"
+            )
+            if not cells:
+                return False
+            for c in cells:
+                text = c.text.strip().replace(",", "")
+                try:
+                    float(text)
+                    return True
+                except ValueError:
+                    continue
+            return False
+
+        try:
+            WebDriverWait(driver, 15).until(_odds_rendered)
+        except Exception:
+            logger.warning(
+                f"オッズの描画を確認できませんでした（race_id={race_id}）。"
+                "取得できた範囲で解析しますが、odds が全件欠損する可能性があります。"
+            )
+
         soup = BeautifulSoup(driver.page_source, "lxml")
 
         # レース情報

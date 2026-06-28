@@ -152,6 +152,22 @@ def evaluate_race(
     if len(feat_df) < 2:
         return _empty
 
+    # ── ハードキルスイッチ: オッズデータの完全性チェック ─────────────────
+    # 2026-06-28: Seleniumのオッズ描画待機漏れにより odds_map が空（または
+    # 一部欠損）のまま推論が進み、市場確率が一律1/nに退化してEVが人為的に
+    # 膨張する事故が発生した（本来0買い目のはずが1日で43点購入）。
+    # 「データ欠損時は0.0/5.0等のフォールバック値で代替する」のは投資モデル
+    # として致命的に危険なため、1頭でもオッズが欠けていれば推論に進まず
+    # レース全体を即座に見送る（安全側に倒す）。
+    horse_ids = feat_df["horse_id"].astype(str).tolist()
+    missing_odds = [
+        hid for hid in horse_ids
+        if odds_map.get(hid) is None or not np.isfinite(odds_map.get(hid, float("nan")))
+        or odds_map.get(hid, 0.0) <= 1.0
+    ]
+    if not odds_map or missing_odds:
+        return _empty
+
     # ── LTR スコア → Plackett-Luce 確率（temperature scaling 適用）──
     X = (
         feat_df[ltr.feature_columns]
@@ -163,7 +179,6 @@ def evaluate_race(
     model_probs = LTRTrainer.scores_to_probs(raw_scores, temperature=temperature)
 
     # ── 市場確率（単勝オッズから） ──────────────────────────────────
-    horse_ids  = feat_df["horse_id"].astype(str).tolist()
     horse_nums = []
     for num in feat_df["horse_number"].tolist():
         try:
@@ -171,10 +186,7 @@ def evaluate_race(
         except (ValueError, TypeError):
             horse_nums.append(str(num))
 
-    odds_list = []
-    for hid in horse_ids:
-        o = float(odds_map.get(hid, float("nan")))
-        odds_list.append(o if not np.isnan(o) and o > 1.0 else 5.0)
+    odds_list = [float(odds_map[hid]) for hid in horse_ids]
     mkt_probs = market_probs(odds_list)
 
     # ── Step 2-3: 軸馬・パートナー選出 ─────────────────────────────
@@ -214,6 +226,10 @@ def evaluate_race(
     # ── 軸馬の信頼性フィルター ────────────────────────────────────
     # 軸馬の単勝オッズが axis_max_odds を超える場合、市場と AI の乖離が大きく
     # 信頼性が低いため、レース全体を見送る（空リストを返す）。
+    # NaN（オッズ欠損）は「合格」ではなく「安全側に倒して棄却」とする。
+    # 欠損を許容する書き方（not isnan(x) and x > thr）は欠損時にFalseへ
+    # 縮退してフィルターを素通りさせる致命的なバグだったため、
+    # isnan(x) or x > thr （欠損 = 即アウト）へ厳格化する。
     axis_max_odds = getattr(cfg, "axis_max_odds", 10.0)
     if axis_max_odds > 0:
         o_ax1 = float(odds_map.get(horse_ids[axis1], float("nan")))
@@ -221,8 +237,8 @@ def evaluate_race(
             float(odds_map.get(horse_ids[axis2], float("nan")))
             if axis2 is not None else float("nan")
         )
-        ax1_over = not np.isnan(o_ax1) and o_ax1 > axis_max_odds
-        ax2_over = axis2 is not None and not np.isnan(o_ax2) and o_ax2 > axis_max_odds
+        ax1_over = np.isnan(o_ax1) or o_ax1 > axis_max_odds
+        ax2_over = axis2 is not None and (np.isnan(o_ax2) or o_ax2 > axis_max_odds)
     else:
         ax1_over = ax2_over = False
     race_axis_reject = bool(axis_max_odds > 0 and (ax1_over or ax2_over))
@@ -275,9 +291,10 @@ def evaluate_race(
 
         ev = p_model_ij * est_odds_ij
 
+        # NaN（オッズ欠損）は安全側に倒して不合格とする（axis_max_oddsと同様の修正）。
         passed_longshot = not (
-            (not np.isnan(o_i) and o_i > cfg.longshot_odds_max) or
-            (not np.isnan(o_j) and o_j > cfg.longshot_odds_max)
+            (np.isnan(o_i) or o_i > cfg.longshot_odds_max) or
+            (np.isnan(o_j) or o_j > cfg.longshot_odds_max)
         )
         passed_est_odds   = est_odds_ij <= est_q_odds_max
         passed_p_model    = p_model_ij >= cfg.min_p_model_threshold
