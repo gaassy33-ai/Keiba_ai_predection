@@ -975,5 +975,85 @@
     ],
     "quinella_payout": 1080,
     "is_g1": false
+  },
+  "202603020202": {
+    "top2": [
+      "12",
+      "7"
+    ],
+    "quinella_payout": 1640,
+    "is_g1": false
+  },
+  "202603020206": {
+    "top2": [
+      "16",
+      "6"
+    ],
+    "quinella_payout": 1180,
+    "is_g1": false
+  },
+  "202603020210": {
+    "top2": [
+      "10",
+      "4"
+    ],
+    "quinella_payout": 2430,
+    "is_g1": false
+  },
+  "202610020204": {
+    "top2": [
+      "10",
+      "13"
+    ],
+    "quinella_payout": 2420,
+    "is_g1": false
+  },
+  "202610020207": {
+    "top2": [
+      "2",
+      "4"
+    ],
+    "quinella_payout": 830,
+    "is_g1": false
+  },
+  "202610020210": {
+    "top2": [
+      "11",
+      "9"
+    ],
+    "quinella_payout": 7410,
+    "is_g1": false
+  },
+  "202610020212": {
+    "top2": [
+      "13",
+      "7"
+    ],
+    "quinella_payout": 6310,
+    "is_g1": false
+  },
+  "202602010602": {
+    "top2": [
+      "3",
+      "8"
+    ],
+    "quinella_payout": 7660,
+    "is_g1": false
+  },
+  "202602010603": {
+    "top2": [
+      "7",
+      "8"
+    ],
+    "quinella_payout": 250,
+    "is_g1": false
+  },
+  "202602010610": {
+    "top2": [
+      "1",
+      "10"
+    ],
+    "quinella_payout": 1050,
+    "is_g1": false
   }
 }
