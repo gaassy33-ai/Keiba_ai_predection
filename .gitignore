@@ -19,8 +19,10 @@ env/
 # データファイル（大容量）
 data/raw/
 data/processed/
+data/analysis/
 data/models/*.pkl
 data/models/*.bin
+data/models/*.bak
 # 学習済みモデル・統計はリポジトリに含める（JRA + NAR）
 !data/models/lgbm_model.pkl
 !data/models/lgbm_model_bad_season.pkl
