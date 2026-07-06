@@ -111,3 +111,64 @@ def test_axis_max_odds_still_rejects_overpriced_axis(ltr):
     odds_map = {f"h{i}": float(2 + i) for i in range(6)}
     bets = evaluate_race(feat_df, odds_map, horse_names, ltr, _make_cfg(axis_max_odds=1.5))
     assert bets == []
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Gatekeeper テレメトリ（gk_score / gk_pass）
+# ──────────────────────────────────────────────────────────────────────────────
+
+class _FakeGatekeeper:
+    """GatekeeperTrainer の軽量モック（軸馬スコアを決定論的に返す）。"""
+
+    feature_columns = FEATURE_COLUMNS
+
+    def __init__(self, score: float = 0.9):
+        self._score = score
+
+    def predict_proba(self, X: "pd.DataFrame") -> "np.ndarray":
+        return np.full(len(X), self._score)
+
+
+def test_gk_score_populated_when_gatekeeper_used(ltr):
+    """Gatekeeper が渡された場合、買い目に gk_score / gk_pass が記録される。"""
+    feat_df = _make_feat_df(n=6)
+    horse_names = {hid: hid for hid in feat_df["horse_id"]}
+    odds_map = {f"h{i}": float(2 + i) for i in range(6)}
+    gk = _FakeGatekeeper(score=0.9)
+
+    bets = evaluate_race(
+        feat_df, odds_map, horse_names, ltr, _make_cfg(),
+        gatekeeper=gk, gatekeeper_threshold=0.35,
+    )
+    assert len(bets) > 0, "Gatekeeper スコア 0.9 (閾値 0.35) で買い目が生成されること"
+    for bet in bets:
+        assert bet.gk_score is not None, "gk_score が None でないこと"
+        assert 0.0 <= bet.gk_score <= 1.0, "gk_score が [0, 1] に収まること"
+        assert bet.gk_pass is True, "閾値を上回るスコアなので gk_pass=True であること"
+
+
+def test_gk_score_none_without_gatekeeper(ltr):
+    """Gatekeeper が渡されない場合、gk_score / gk_pass は None になる。"""
+    feat_df = _make_feat_df(n=6)
+    horse_names = {hid: hid for hid in feat_df["horse_id"]}
+    odds_map = {f"h{i}": float(2 + i) for i in range(6)}
+
+    bets = evaluate_race(feat_df, odds_map, horse_names, ltr, _make_cfg())
+    assert len(bets) > 0
+    for bet in bets:
+        assert bet.gk_score is None, "Gatekeeper 未使用時は gk_score=None であること"
+        assert bet.gk_pass  is None, "Gatekeeper 未使用時は gk_pass=None であること"
+
+
+def test_gk_rejects_axis_below_threshold(ltr):
+    """Gatekeeper スコアが閾値を下回る場合、レース全体を見送る（両軸が棄却）。"""
+    feat_df = _make_feat_df(n=6)
+    horse_names = {hid: hid for hid in feat_df["horse_id"]}
+    odds_map = {f"h{i}": float(2 + i) for i in range(6)}
+    gk = _FakeGatekeeper(score=0.2)  # 全馬スコア 0.2 < 閾値 0.35
+
+    bets = evaluate_race(
+        feat_df, odds_map, horse_names, ltr, _make_cfg(),
+        gatekeeper=gk, gatekeeper_threshold=0.35,
+    )
+    assert bets == [], "全軸馬が閾値未満 → 買い目なし"

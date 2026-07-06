@@ -36,6 +36,7 @@ class BettingConfig:
     always_predict_g1:       bool  = True     # G1特別モード: 全フィルターをバイパスして必ず予測
     shadow_mode:             bool  = False    # True: LINE通知（実弾シグナル）を停止し、全候補ペアをログ出力するのみ
     gatekeeper_threshold:    float = 0.50     # Two-Brain: P_axis_safe がこれ未満の軸馬を棄却
+    min_distance:            int   = 1000     # 投資対象の最小距離（m）。これ未満のレースはスキップ
 
 
 @dataclass
@@ -76,6 +77,7 @@ class StrategyConfig:
                 always_predict_g1     = bool(b.get("always_predict_g1", True)),
                 shadow_mode           = bool(b.get("shadow_mode", False)),
                 gatekeeper_threshold  = float(b.get("gatekeeper_threshold", 0.50)),
+                min_distance          = int(b.get("min_distance", 1000)),
             ),
             ltr_model_path = BASE_DIR / m.get("ltr_model_path",
                                                "data/models/lgbm_ltr_model.pkl"),

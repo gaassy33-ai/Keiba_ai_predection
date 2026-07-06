@@ -58,6 +58,8 @@ class QuinellaBet:
     p_market:          float        # 市場馬連確率
     ev:                float        # 算出 EV = p_model × 推定オッズ
     est_quinella_odds: float        # 推定馬連オッズ（市場）
+    gk_score:          float | None = None  # Gatekeeper: ペア中の軸馬の最低p_safe（None=未適用）
+    gk_pass:           bool  | None = None  # Gatekeeper: 通過フラグ（None=未適用）
 
 
 # 後方互換エイリアス（旧コードとの互換性維持）
@@ -223,6 +225,14 @@ def evaluate_race(
             return axis2_safe
         return True   # パートナー（軸ではない）は Gatekeeper 対象外
 
+    def _axis_gk_score(idx: int) -> float | None:
+        """軸馬のGatekeeperスコアを返す。パートナー（軸でない）はNone。"""
+        if idx == axis1:
+            return p_axis1_safe
+        if axis2 is not None and idx == axis2:
+            return p_axis2_safe
+        return None
+
     # ── 軸馬の信頼性フィルター ────────────────────────────────────
     # 軸馬の単勝オッズが axis_max_odds を超える場合、市場と AI の乖離が大きく
     # 信頼性が低いため、レース全体を見送る（空リストを返す）。
@@ -305,6 +315,15 @@ def evaluate_race(
             and passed_ev and not race_axis_reject and passed_gatekeeper
         )
 
+        # ── Gatekeeper テレメトリ: ペア中の軸馬の最低スコアを記録 ───────
+        if gatekeeper is not None:
+            gk_scores = [s for s in [_axis_gk_score(i), _axis_gk_score(j)] if s is not None]
+            pair_gk_score: float | None = min(gk_scores) if gk_scores else None
+            pair_gk_pass:  bool  | None = passed_gatekeeper
+        else:
+            pair_gk_score = None
+            pair_gk_pass  = None
+
         if return_candidates:
             candidates.append({
                 "horse_num_i":       horse_nums[i],
@@ -347,6 +366,8 @@ def evaluate_race(
             p_market          = round(p_market_ij, 4),
             ev                = round(ev, 3),
             est_quinella_odds = round(est_odds_ij, 1),
+            gk_score          = round(pair_gk_score, 4) if pair_gk_score is not None else None,
+            gk_pass           = pair_gk_pass,
         ))
 
     # EV 降順ソート

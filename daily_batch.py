@@ -78,6 +78,8 @@ _PRED_LOG_COLUMNS = [
     "p_market",           # 市場馬連確率
     "ev",                 # 算出 EV
     "ev_rank",            # レース内 EV 順位（1 = 最高）
+    "gk_score",           # Gatekeeper: ペア中の軸馬の最低 p_safe スコア（None=未適用）
+    "gk_pass",            # Gatekeeper: 通過フラグ（None=未適用）
 ]
 
 
@@ -115,6 +117,8 @@ def save_prediction_log(
                 "p_market":     bet.p_market,
                 "ev":           bet.ev,
                 "ev_rank":      rank,
+                "gk_score":     bet.gk_score,
+                "gk_pass":      bet.gk_pass,
             })
 
     with open(out_path, "w", newline="", encoding="utf-8") as f:
@@ -271,6 +275,11 @@ def process_race(
     distance = int(race_info.distance or 0)
     if distance == 0 or distance >= 2750:
         logger.debug(f"  skip {race_info.race_id}: 距離={distance}m 範囲外")
+        return None
+
+    min_distance = getattr(cfg, "min_distance", 1000)
+    if not g1_override and distance < min_distance:
+        logger.debug(f"  skip {race_info.race_id}: 距離={distance}m < 最小{min_distance}m (短距離足切り)")
         return None
 
     entries = race_info.entries
