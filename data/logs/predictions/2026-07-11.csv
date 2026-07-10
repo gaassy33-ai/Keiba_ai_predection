@@ -1,0 +1,3 @@
+date,race_id,race_name,course_type,distance,horse_num_i,horse_id_i,horse_name_i,horse_num_j,horse_id_j,horse_name_j,odds_i,odds_j,est_quinella_odds,p_model,p_market,ev,ev_rank,gk_score,gk_pass
+2026-07-11,202610020508,小倉8R,ダート,1700,5,2023104858,エイコーンドリーム,9,2021103776,ベルメサイア,4.8,20.9,58.2,0.0191,0.0142,1.11,1,0.4723,True
+2026-07-11,202602010906,函館6R,ダート,1700,6,2023101131,ライトアファイア,3,2023103621,シンエンドーツダ,8.9,13.2,71.7,0.0277,0.0115,1.987,1,0.3709,True
