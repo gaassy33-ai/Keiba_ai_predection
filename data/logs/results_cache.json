@@ -1119,5 +1119,21 @@
     ],
     "quinella_payout": 3870,
     "is_g1": false
+  },
+  "202610020508": {
+    "top2": [
+      "10",
+      "8"
+    ],
+    "quinella_payout": 4390,
+    "is_g1": false
+  },
+  "202602010906": {
+    "top2": [
+      "4",
+      "9"
+    ],
+    "quinella_payout": 690,
+    "is_g1": false
   }
 }
