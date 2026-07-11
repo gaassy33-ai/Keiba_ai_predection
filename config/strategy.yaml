@@ -16,8 +16,12 @@ betting:
   #   2026-06-22: Two-Brain System（PairCalibrator + Gatekeeper）の
   #   main反映・動作確認が完了したため、フラットベットでの実弾運用
   #   （ソフトローンチ）を再開。
+  #   2026-07-11: V2統合 Step3A。PairCalibrator V1を退避し、V2 LTR
+  #   の生p_modelで稼働するアイデンティティ運用へ移行。PairCalibrator
+  #   V2フィット用データ蓄積（目標: 200ペア以上）が完了するまで
+  #   shadow_modeで安全に運用しデータ収集を行う。
   # ──────────────────────────────────────────────────────────────────
-  shadow_mode: false
+  shadow_mode: true
 
   # 対象コース（リスト形式）
   target_surface:
