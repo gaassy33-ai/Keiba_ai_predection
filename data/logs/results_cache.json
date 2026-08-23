@@ -1614,5 +1614,38 @@
     ],
     "quinella_payout": 7150,
     "is_g1": false
+  },
+  "202604030212": null,
+  "202607030204": {
+    "top2": [
+      "7",
+      "9"
+    ],
+    "quinella_payout": 23200,
+    "is_g1": false
+  },
+  "202607030210": {
+    "top2": [
+      "11",
+      "12"
+    ],
+    "quinella_payout": 670,
+    "is_g1": false
+  },
+  "202601020203": {
+    "top2": [
+      "13",
+      "5"
+    ],
+    "quinella_payout": 2010,
+    "is_g1": false
+  },
+  "202601020207": {
+    "top2": [
+      "10",
+      "5"
+    ],
+    "quinella_payout": 2200,
+    "is_g1": false
   }
 }
