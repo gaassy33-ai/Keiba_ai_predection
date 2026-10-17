@@ -2022,5 +2022,61 @@
     ],
     "quinella_payout": 14290,
     "is_g1": false
+  },
+  "202605040601": {
+    "top2": [
+      "2",
+      "4"
+    ],
+    "quinella_payout": 320,
+    "is_g1": false
+  },
+  "202605040603": {
+    "top2": [
+      "11",
+      "8"
+    ],
+    "quinella_payout": 450,
+    "is_g1": false
+  },
+  "202605040607": {
+    "top2": [
+      "11",
+      "5"
+    ],
+    "quinella_payout": 650,
+    "is_g1": false
+  },
+  "202605040612": {
+    "top2": [
+      "2",
+      "7"
+    ],
+    "quinella_payout": 1180,
+    "is_g1": false
+  },
+  "202608040606": {
+    "top2": [
+      "10",
+      "4"
+    ],
+    "quinella_payout": 1070,
+    "is_g1": false
+  },
+  "202608040609": {
+    "top2": [
+      "11",
+      "7"
+    ],
+    "quinella_payout": 640,
+    "is_g1": false
+  },
+  "202608040611": {
+    "top2": [
+      "10",
+      "5"
+    ],
+    "quinella_payout": 4030,
+    "is_g1": false
   }
 }
