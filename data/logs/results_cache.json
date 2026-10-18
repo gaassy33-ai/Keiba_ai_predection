@@ -2078,5 +2078,77 @@
     ],
     "quinella_payout": 4030,
     "is_g1": false
+  },
+  "202605040701": {
+    "top2": [
+      "11",
+      "3"
+    ],
+    "quinella_payout": 1190,
+    "is_g1": false
+  },
+  "202605040704": {
+    "top2": [
+      "12",
+      "16"
+    ],
+    "quinella_payout": 810,
+    "is_g1": false
+  },
+  "202605040710": {
+    "top2": [
+      "6",
+      "7"
+    ],
+    "quinella_payout": 300,
+    "is_g1": false
+  },
+  "202608040702": {
+    "top2": [
+      "1",
+      "4"
+    ],
+    "quinella_payout": 750,
+    "is_g1": false
+  },
+  "202608040707": {
+    "top2": [
+      "7",
+      "8"
+    ],
+    "quinella_payout": 1900,
+    "is_g1": false
+  },
+  "202608040710": {
+    "top2": [
+      "2",
+      "8"
+    ],
+    "quinella_payout": 3370,
+    "is_g1": false
+  },
+  "202608040711": {
+    "top2": [
+      "1",
+      "8"
+    ],
+    "quinella_payout": 1600,
+    "is_g1": true
+  },
+  "202608040712": {
+    "top2": [
+      "3",
+      "8"
+    ],
+    "quinella_payout": 9200,
+    "is_g1": false
+  },
+  "202604040212": {
+    "top2": [
+      "7",
+      "8"
+    ],
+    "quinella_payout": 530,
+    "is_g1": false
   }
 }
