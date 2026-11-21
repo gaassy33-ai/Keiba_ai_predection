@@ -1,0 +1,3 @@
+date,race_id,race_name,course_type,distance,horse_num_i,horse_id_i,horse_name_i,horse_num_j,horse_id_j,horse_name_j,odds_i,odds_j,est_quinella_odds,p_model,p_market,ev,ev_rank,gk_score,gk_pass
+2026-11-21,202608050501,京都1R,ダート,1400,14,2024107146,スターリーデー,3,2024105282,キャンディリヒト,4.9,29.8,86.8,0.0236,0.0095,2.05,1,0.4723,True
+2026-11-21,202608050502,京都2R,ダート,1800,5,2024108311,アメリカンノヴァ,2,2024100587,スエヒロビリーブ,5.4,15.9,50.1,0.0282,0.0165,1.41,1,0.454,True
